@@ -1,0 +1,762 @@
+# CodeRabbit Configuration for Terraform (Provider-Agnostic)
+# Focuses on universal Terraform best practices regardless of provider
+# Place this file at the root of your Terraform repository as .coderabbit.yaml
+
+version: 1.0
+
+# Language settings
+language: en-US
+
+# Early access features
+early_access: true
+
+# Review settings
+reviews:
+  # Review profile
+  profile: assertive  # Strict for infrastructure code
+  
+  # Request changes workflow
+  request_changes_workflow: true
+  
+  # High level summary
+  high_level_summary: true
+  
+  # Poem style for summaries
+  poem: false
+  
+  # Review status
+  review_status: true
+  
+  # Collapse walkthrough
+  collapse_walkthrough: false
+  
+  # Auto review
+  auto_review:
+    enabled: true
+    
+    # Ignore specific file patterns
+    ignore_patterns:
+      - "**/*.md"
+      - "**/LICENSE"
+      - "**/.gitignore"
+      - "**/CHANGELOG.md"
+      - "**/.terraform/**"
+      - "**/.terraform.lock.hcl"
+      - "**/terraform.tfstate*"
+    
+    # Auto-approve trivial changes
+    auto_approve:
+      enabled: true
+      conditions:
+        - type: "documentation"
+          max_files: 3
+        - type: "formatting"
+          max_lines: 30
+  
+  # Tools to use
+  tools:
+    # Terraform validation
+    terraform:
+      enabled: true
+    
+    # Security scanning (provider-agnostic)
+    security:
+      enabled: true
+
+# Path-specific instructions
+path_instructions:
+  # Main Terraform files
+  - path: "**/*.tf"
+    instructions: |
+      For Terraform files, check PROVIDER-AGNOSTIC issues:
+      
+      1. HARDCODED SECRETS (CRITICAL)
+         - No hardcoded passwords, API tokens, SSH keys
+         - All secrets must use sensitive = true
+         - Never commit credentials to version control
+         - Use variables for all sensitive data
+         
+         Examples to flag:
+         ```hcl
+         # ❌ CRITICAL: Hardcoded password
+         password = "MyPassword123!"
+         
+         # ❌ CRITICAL: Hardcoded API token
+         api_token = "abc123def456"
+         
+         # ❌ CRITICAL: Hardcoded SSH key
+         ssh_private_key = "-----BEGIN RSA PRIVATE KEY-----..."
+         
+         # ❌ CRITICAL: Hardcoded certificate
+         certificate = "-----BEGIN CERTIFICATE-----..."
+         ```
+         
+         Correct approach:
+         ```hcl
+         variable "password" {
+           description = "Password from vault/secrets manager"
+           type        = string
+           sensitive   = true
+         }
+         
+         variable "api_token" {
+           description = "API token for provider authentication"
+           type        = string
+           sensitive   = true
+         }
+         ```
+      
+      2. FOR_EACH VS COUNT (BEST PRACTICE)
+         - Prefer for_each over count
+         - count breaks when items removed from middle
+         - for_each uses keys, more stable
+         - Document why count is used if necessary
+         
+         Flag:
+         ```hcl
+         # ❌ BAD: Using count
+         resource "vsphere_virtual_machine" "web" {
+           count = 3
+           name  = "web-${count.index}"
+         }
+         ```
+         
+         Suggest:
+         ```hcl
+         # ✅ GOOD: Using for_each
+         resource "vsphere_virtual_machine" "web" {
+           for_each = toset(["web-1", "web-2", "web-3"])
+           name     = each.key
+         }
+         ```
+      
+      3. VARIABLE VALIDATION (BEST PRACTICE)
+         - All variables should have validation where appropriate
+         - Validate enums, ranges, patterns
+         - Add descriptions to all variables
+         - Use proper type constraints
+         
+         Flag:
+         ```hcl
+         # ❌ BAD: No validation
+         variable "environment" {
+           type = string
+         }
+         
+         variable "vm_count" {
+           type = number
+         }
+         ```
+         
+         Suggest:
+         ```hcl
+         # ✅ GOOD: With validation
+         variable "environment" {
+           description = "Environment name (dev, staging, prod)"
+           type        = string
+           
+           validation {
+             condition     = contains(["dev", "staging", "prod"], var.environment)
+             error_message = "Environment must be dev, staging, or prod"
+           }
+         }
+         
+         variable "vm_count" {
+           description = "Number of VMs to create"
+           type        = number
+           
+           validation {
+             condition     = var.vm_count > 0 && var.vm_count <= 20
+             error_message = "VM count must be between 1 and 20"
+           }
+         }
+         ```
+      
+      4. LIFECYCLE RULES (CRITICAL RESOURCES)
+         - Use prevent_destroy for critical resources
+         - Use create_before_destroy for zero-downtime
+         - Document why lifecycle rules exist
+         
+         Flag missing lifecycle on:
+         - Databases, storage systems
+         - Production VMs
+         - Network infrastructure
+         
+         ```hcl
+         # ✅ GOOD: Protected critical resource
+         resource "vsphere_virtual_machine" "database" {
+           lifecycle {
+             prevent_destroy = true  # Prevent accidental deletion
+           }
+         }
+         
+         resource "proxmox_vm_qemu" "app" {
+           lifecycle {
+             create_before_destroy = true  # Zero-downtime updates
+           }
+         }
+         ```
+      
+      5. RESOURCE NAMING CONVENTIONS
+         - Use consistent naming scheme
+         - Include environment in names
+         - Use descriptive, not generic names
+         - Follow organization standards
+         
+         Flag:
+         ```hcl
+         # ❌ BAD: Generic names
+         resource "vsphere_virtual_machine" "vm1" {
+           name = "server"
+         }
+         ```
+         
+         Suggest:
+         ```hcl
+         # ✅ GOOD: Descriptive names
+         resource "vsphere_virtual_machine" "web_server_prod" {
+           name = "${var.project}-${var.environment}-web-01"
+         }
+         ```
+      
+      6. DEPENDS_ON USAGE
+         - Only use when implicit dependencies insufficient
+         - Document why explicit dependency needed
+         - Avoid circular dependencies
+         - Consider if resource references can replace depends_on
+         
+         Flag overuse:
+         ```hcl
+         # ⚠️ WARNING: Unnecessary depends_on
+         resource "vsphere_virtual_machine" "app" {
+           depends_on = [vsphere_virtual_machine.db]
+           network_interface {
+             # Could reference db.ip directly
+           }
+         }
+         ```
+      
+      7. DYNAMIC BLOCKS
+         - Use for repeated nested blocks
+         - Keep logic simple and readable
+         - Document complex dynamic blocks
+         - Avoid deeply nested dynamics
+         
+         Good:
+         ```hcl
+         dynamic "disk" {
+           for_each = var.additional_disks
+           content {
+             label            = disk.value.label
+             size             = disk.value.size
+             thin_provisioned = disk.value.thin_provisioned
+           }
+         }
+         ```
+         
+         Flag if too complex or deeply nested
+      
+      8. LOCALS VS VARIABLES
+         - Variables: Input from outside
+         - Locals: Computed/derived values
+         - Don't compute values in variables
+         - Don't use locals for external input
+         
+         Flag:
+         ```hcl
+         # ❌ BAD: Computing in variable
+         variable "name" {
+           default = "${var.project}-${var.env}"  # Can't do this!
+         }
+         ```
+         
+         Suggest:
+         ```hcl
+         # ✅ GOOD: Use locals for computation
+         locals {
+           name_prefix = "${var.project}-${var.environment}"
+           common_tags = {
+             Environment = var.environment
+             ManagedBy   = "Terraform"
+           }
+         }
+         ```
+      
+      9. RESOURCE TAGS/LABELS
+         - All resources should have tags/labels
+         - Include: Environment, Owner, ManagedBy, Project
+         - Use consistent tag schema
+         - Consider provider default_tags if available
+         
+         Flag resources without tags
+      
+      10. MOVED BLOCKS (REFACTORING)
+          - Use when refactoring resource addresses
+          - Prevents destroy/recreate
+          - Document what was moved and why
+          
+          ```hcl
+          moved {
+            from = vsphere_virtual_machine.old_name
+            to   = vsphere_virtual_machine.new_name
+          }
+          ```
+      
+      11. NULL RESOURCE ABUSE
+          - Flag overuse of null_resource
+          - Suggest proper resource types instead
+          - Document legitimate null_resource uses
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Consider proper resource type
+          resource "null_resource" "configure_vm" {
+            provisioner "local-exec" {
+              command = "ansible-playbook ..."
+            }
+          }
+          ```
+      
+      12. PROVISIONERS
+          - Flag use of provisioners (anti-pattern)
+          - Suggest proper configuration management
+          - Only accept for rare edge cases
+          - Require justification comment
+          
+          ```hcl
+          # ⚠️ WARNING: Provisioners are anti-pattern
+          resource "vsphere_virtual_machine" "web" {
+            provisioner "remote-exec" {
+              # Should use cloud-init, Ansible, etc.
+            }
+          }
+          ```
+  
+  # Variables files
+  - path: "**/*variables.tf"
+    instructions: |
+      For variable files, check:
+      
+      1. ALL VARIABLES MUST HAVE:
+         - description (mandatory)
+         - type (mandatory)
+         - validation (when appropriate)
+         - default (when appropriate, never for secrets)
+      
+      2. SECRETS MUST HAVE:
+         - sensitive = true (mandatory)
+         - no default value (mandatory)
+         - clear description of where to get value
+      
+      3. VALIDATION RULES FOR:
+         - Enums (environment: dev/staging/prod)
+         - Ranges (counts, sizes)
+         - Patterns (names, IDs, IPs)
+         - CIDR blocks
+         - File paths
+      
+      4. TYPE CONSTRAINTS:
+         - Use specific types, not any
+         - Use object() over map() when structure known
+         - Use list(string) over list(any)
+         - Define object schemas completely
+      
+      Flag:
+      ```hcl
+      # ❌ BAD: Multiple issues
+      variable "env" {
+        type = string
+      }
+      
+      variable "password" {
+        default = "changeme"
+      }
+      
+      variable "config" {
+        type = any  # Too generic
+      }
+      ```
+      
+      Require:
+      ```hcl
+      # ✅ GOOD: Complete variables
+      variable "environment" {
+        description = "Environment name (dev, staging, prod)"
+        type        = string
+        
+        validation {
+          condition     = contains(["dev", "staging", "prod"], var.environment)
+          error_message = "Must be dev, staging, or prod"
+        }
+      }
+      
+      variable "password" {
+        description = "Password from vault (use TF_VAR_password)"
+        type        = string
+        sensitive   = true
+        # No default!
+      }
+      
+      variable "vm_config" {
+        description = "VM configuration object"
+        type = object({
+          cpus   = number
+          memory = number
+          disks  = list(object({
+            size = number
+            thin = bool
+          }))
+        })
+      }
+      ```
+  
+  # Outputs files
+  - path: "**/*outputs.tf"
+    instructions: |
+      For output files, check:
+      
+      1. ALL OUTPUTS MUST HAVE:
+         - description (mandatory)
+         - sensitive = true if contains secrets
+      
+      2. OUTPUT NAMING:
+         - Descriptive names
+         - Consistent with variable naming
+         - Consider module consumers
+      
+      3. SECURITY:
+         - Mark sensitive outputs as sensitive
+         - Don't expose secrets unnecessarily
+      
+      Flag:
+      ```hcl
+      # ❌ BAD: No description, secret not marked
+      output "ip" {
+        value = vsphere_virtual_machine.db.default_ip_address
+      }
+      
+      output "password" {
+        value = random_password.db.result
+      }
+      ```
+      
+      Require:
+      ```hcl
+      # ✅ GOOD: Complete outputs
+      output "database_ip_address" {
+        description = "IP address of database VM"
+        value       = vsphere_virtual_machine.db.default_ip_address
+      }
+      
+      output "database_password" {
+        description = "Database admin password"
+        value       = random_password.db.result
+        sensitive   = true
+      }
+      ```
+  
+  # Terraform configuration files
+  - path: "**/terraform.tf"
+    instructions: |
+      For terraform{} blocks, check:
+      
+      1. REQUIRED PROVIDERS (MANDATORY)
+         - All providers must be pinned
+         - Use ~> for minor version constraints
+         - Document why specific versions needed
+         - Include source for all providers
+      
+      2. BACKEND CONFIGURATION (CRITICAL)
+         - Remote backend configured (not local)
+         - State locking enabled
+         - Encryption enabled (if supported)
+         - No credentials in backend config
+      
+      3. TERRAFORM VERSION (MANDATORY)
+         - Pin Terraform version
+         - Use ~> constraint for minor versions
+      
+      Flag:
+      ```hcl
+      # ❌ BAD: Multiple issues
+      terraform {
+        required_providers {
+          vsphere = {
+            source = "hashicorp/vsphere"
+            # No version!
+          }
+        }
+        # No backend!
+      }
+      ```
+      
+      Require:
+      ```hcl
+      # ✅ GOOD: Complete configuration
+      terraform {
+        required_version = "~> 1.6"
+        
+        required_providers {
+          vsphere = {
+            source  = "hashicorp/vsphere"
+            version = "~> 2.5"
+          }
+          proxmox = {
+            source  = "telmate/proxmox"
+            version = "~> 2.9"
+          }
+        }
+        
+        backend "consul" {
+          address = var.consul_address
+          path    = "terraform/${var.project}/${var.environment}"
+          lock    = true
+        }
+        
+        # OR for GitLab/GitHub:
+        backend "http" {
+          address        = "https://gitlab.com/api/v4/projects/123/terraform/state/mystate"
+          lock_address   = "https://gitlab.com/api/v4/projects/123/terraform/state/mystate/lock"
+          unlock_address = "https://gitlab.com/api/v4/projects/123/terraform/state/mystate/lock"
+          lock_method    = "POST"
+          unlock_method  = "DELETE"
+        }
+      }
+      ```
+  
+  # Module files
+  - path: "**/modules/**/*.tf"
+    instructions: |
+      For module files, check:
+      
+      1. MODULE STRUCTURE:
+         - README.md exists
+         - versions.tf exists
+         - variables.tf with all descriptions
+         - outputs.tf with all descriptions
+         - examples/ directory exists
+      
+      2. MODULE INPUTS:
+         - All variables documented
+         - Validation rules present
+         - Sensible defaults where appropriate
+         - No required variables for optional features
+      
+      3. MODULE OUTPUTS:
+         - Output everything consumers might need
+         - Document all outputs
+         - Mark secrets sensitive
+      
+      4. MODULE VERSIONING:
+         - Pin provider versions in module
+         - Document version constraints
+         - Use semantic versioning for module releases
+      
+      5. EXAMPLES:
+         - Include examples/ directory
+         - Show common use cases
+         - Make examples runnable
+      
+      Flag modules without:
+      - README.md
+      - examples/
+      - Variable descriptions
+      - Output descriptions
+      - Version constraints
+  
+  # tfvars files
+  - path: "**/*.tfvars"
+    instructions: |
+      For tfvars files, check:
+      
+      1. NO SECRETS (CRITICAL)
+         - Never commit secrets to tfvars
+         - Use environment variables or vault
+         - Add *.tfvars to .gitignore if contains secrets
+      
+      2. ENVIRONMENT-SPECIFIC:
+         - Different tfvars per environment
+         - Clear naming: dev.tfvars, prod.tfvars
+         - Document differences
+      
+      3. DOCUMENTATION:
+         - Comment non-obvious values
+         - Explain why specific values chosen
+         - Reference related documentation
+      
+      Flag:
+      ```hcl
+      # ❌ CRITICAL: Secret in tfvars
+      api_token = "secret123"
+      password  = "MyPassword!"
+      ```
+      
+      Require:
+      ```hcl
+      # ✅ GOOD: No secrets, documented
+      # VM configuration for production environment
+      # See docs/infrastructure.md for sizing decisions
+      
+      vm_count      = 5
+      vm_cpu_cores  = 4
+      vm_memory_gb  = 16
+      
+      # Network configuration - production VLAN
+      network_id = "vlan-100"
+      
+      # Secrets set via environment variables:
+      # export TF_VAR_api_token=$(vault read -field=token secret/prod/api)
+      # export TF_VAR_password=$(vault read -field=password secret/prod/db)
+      ```
+  
+  # Provider configuration files
+  - path: "**/*provider*.tf"
+    instructions: |
+      For provider configuration, check:
+      
+      1. NO HARDCODED CREDENTIALS:
+         - Never hardcode username/password
+         - Use variables or environment variables
+         - Reference vault/secrets manager
+      
+      2. PROVIDER CONFIGURATION:
+         - Use variables for endpoints
+         - Document provider requirements
+         - Use default_tags when available
+      
+      Flag:
+      ```hcl
+      # ❌ CRITICAL: Hardcoded credentials
+      provider "vsphere" {
+        user     = "administrator@vsphere.local"
+        password = "MyPassword123!"
+        vsphere_server = "vcenter.example.com"
+      }
+      ```
+      
+      Require:
+      ```hcl
+      # ✅ GOOD: Variables for credentials
+      provider "vsphere" {
+        user           = var.vsphere_user
+        password       = var.vsphere_password
+        vsphere_server = var.vsphere_server
+        
+        # Optional: Skip cert verification for dev
+        allow_unverified_ssl = var.environment != "prod"
+      }
+      
+      # Variables defined elsewhere:
+      variable "vsphere_user" {
+        description = "vSphere username (use TF_VAR_vsphere_user)"
+        type        = string
+        sensitive   = true
+      }
+      ```
+
+# Custom review instructions
+custom_review_instructions: |
+  This is a Terraform infrastructure-as-code repository (provider-agnostic).
+  
+  CRITICAL FOCUS AREAS (Universal to all providers):
+  
+  1. SECRETS MANAGEMENT (CRITICAL)
+     - NEVER allow hardcoded secrets
+     - All secrets must use sensitive = true
+     - Check passwords, API tokens, SSH keys, certificates
+     - Flag any credentials in code
+  
+  2. TERRAFORM BEST PRACTICES
+     - for_each over count (always)
+     - Variable validation (when appropriate)
+     - Descriptions on all variables/outputs
+     - Lifecycle rules on critical resources
+     - Resource naming conventions
+     - Tags/labels on all resources
+  
+  3. STATE MANAGEMENT (CRITICAL)
+     - Remote backend configured
+     - State locking enabled
+     - No state files in git
+     - Encryption where supported
+  
+  4. MODULE QUALITY
+     - README with usage examples
+     - All variables documented
+     - All outputs documented
+     - Version constraints
+     - Examples directory
+  
+  5. CODE ORGANIZATION
+     - Logical file structure
+     - Consistent naming
+     - Clear resource dependencies
+     - Minimal use of provisioners
+     - No null_resource abuse
+  
+  6. VERSION MANAGEMENT
+     - Terraform version pinned
+     - Provider versions pinned
+     - Use ~> for minor version updates
+     - Document version requirements
+  
+  7. DOCUMENTATION
+     - Variable descriptions
+     - Output descriptions
+     - Complex logic commented
+     - Module README files
+     - Architecture decisions documented
+  
+  PROVIDER-AGNOSTIC MEANS:
+  - Don't assume cloud providers (AWS/Azure/GCP)
+  - Focus on Terraform fundamentals
+  - Check vSphere, Proxmox, on-prem patterns
+  - Universal security principles
+  - Code quality over provider specifics
+
+# Tone settings
+tone_instructions: |
+  - Be direct about security issues (CRITICAL, ERROR, WARNING)
+  - Explain WHY it matters (blast radius, maintainability)
+  - Provide concrete fixes with code examples
+  - For secrets: Explain where they'll be exposed (git, state, logs)
+  - For best practices: Explain the pain of not following them
+  - Use emojis: 🔐 security, 💥 breaking change, ⚠️ warning, ❌ error, ✅ good
+
+# Additional instructions for specific file types
+file_type_instructions:
+  terraform:
+    - "Check for hardcoded secrets (passwords, tokens, keys)"
+    - "Validate for_each used instead of count"
+    - "Verify all variables have descriptions and validation"
+    - "Check lifecycle rules on critical resources"
+    - "Validate resource naming conventions"
+    - "Check tags/labels on all resources"
+    - "Verify depends_on is justified"
+    - "Flag provisioner usage"
+    - "Check dynamic block complexity"
+
+# Disable specific checks
+disable_checks:
+  # Allow long lines for complex expressions
+  - "terraform-line-too-long-for-expressions"
+
+# PR title validation
+pull_requests:
+  title_pattern: "^(feat|fix|docs|refactor|chore)(\\(.+\\))?: .+"
+  title_pattern_error: |
+    PR title must follow conventional commits format:
+    feat(vm): add production web servers
+    fix(network): correct VLAN configuration
+    docs: update deployment guide
+
+# Knowledge base
+knowledge_base:
+  learnings:
+    enabled: true
+    scope: "repository"
+  opt_in: true
+
+# Chat settings
+chat:
+  auto_reply: true
