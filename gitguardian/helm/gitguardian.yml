@@ -1,0 +1,380 @@
+# GitGuardian Configuration - Helm Charts
+# Secret detection for Helm chart repositories
+# Place this file at the root of your repository as .gitguardian.yaml
+
+version: 2
+
+# Helm-specific paths to ignore
+paths-ignore:
+  - "**/.git/**"
+  - "**/charts/**/*.tgz"
+  - "**/.helmignore"
+  - "**/Chart.lock"
+
+# Detectors
+secret-scan:
+  detectors:
+    # Cloud Providers
+    - name: AWS Access Key
+      detector_group: aws
+      enabled: true
+    
+    - name: AWS Secret Key
+      detector_group: aws
+      enabled: true
+    
+    - name: GCP API Key
+      detector_group: gcp
+      enabled: true
+    
+    - name: GCP Service Account Key
+      detector_group: gcp
+      enabled: true
+    
+    - name: Azure Storage Account Key
+      detector_group: azure
+      enabled: true
+    
+    - name: Azure Client Secret
+      detector_group: azure
+      enabled: true
+    
+    # Version Control
+    - name: GitHub Personal Access Token
+      detector_group: github
+      enabled: true
+    
+    - name: GitLab Personal Access Token
+      detector_group: gitlab
+      enabled: true
+    
+    # API Services
+    - name: Slack Token
+      detector_group: slack
+      enabled: true
+    
+    - name: SendGrid API Key
+      detector_group: sendgrid
+      enabled: true
+    
+    - name: Twilio API Key
+      detector_group: twilio
+      enabled: true
+    
+    - name: Stripe API Key
+      detector_group: stripe
+      enabled: true
+    
+    - name: Mailgun API Key
+      detector_group: mailgun
+      enabled: true
+    
+    # Database
+    - name: Database Connection String
+      detector_group: database
+      enabled: true
+    
+    - name: PostgreSQL Connection String
+      detector_group: database
+      enabled: true
+    
+    - name: MySQL Connection String
+      detector_group: database
+      enabled: true
+    
+    - name: MongoDB Connection String
+      detector_group: database
+      enabled: true
+    
+    - name: Redis Connection String
+      detector_group: database
+      enabled: true
+    
+    # Container Registry
+    - name: Docker Hub Token
+      detector_group: docker
+      enabled: true
+    
+    - name: Docker Registry Auth
+      detector_group: docker
+      enabled: true
+    
+    # Private Keys
+    - name: RSA Private Key
+      detector_group: private_key
+      enabled: true
+    
+    - name: SSH Private Key
+      detector_group: private_key
+      enabled: true
+    
+    - name: TLS Private Key
+      detector_group: private_key
+      enabled: true
+    
+    # Generic
+    - name: Generic High Entropy Secret
+      detector_group: generic
+      enabled: true
+    
+    - name: Generic Password
+      detector_group: generic
+      enabled: true
+    
+    - name: JWT Token
+      detector_group: generic
+      enabled: true
+    
+    - name: Basic Auth
+      detector_group: generic
+      enabled: true
+    
+    # Package Managers
+    - name: NPM Token
+      detector_group: npm
+      enabled: true
+    
+    - name: PyPI Token
+      detector_group: pypi
+      enabled: true
+
+# Helm-specific exclusions
+matches-ignore:
+  # Helm template syntax (OK)
+  - name: Helm template functions
+    match: '\{\{.*\}\}'
+  
+  - name: Helm values reference
+    match: '\.Values\.'
+  
+  - name: Helm release reference
+    match: '\.Release\.'
+  
+  - name: Helm chart reference
+    match: '\.Chart\.'
+  
+  # Example/placeholder values
+  - name: Example values
+    match: 'changeme'
+  
+  - name: Placeholder tokens
+    match: '<.*>'
+  
+  - name: Example passwords
+    match: 'password123'
+  
+  # Template comments
+  - name: Helm comments
+    match: '\{\{-?\s*/\*.*\*/\s*-?\}\}'
+
+# File patterns for Helm
+file-patterns:
+  # Values files (HIGHEST RISK)
+  - pattern: "**/values.yaml"
+    scan: true
+    priority: critical
+    comment: "Main values file - common source of secrets!"
+  
+  - pattern: "**/values-*.yaml"
+    scan: true
+    priority: critical
+    comment: "Environment-specific values"
+  
+  - pattern: "**/values/**/*.yaml"
+    scan: true
+    priority: critical
+    comment: "Additional values files"
+  
+  # Template files (MEDIUM RISK - should use variables)
+  - pattern: "**/templates/**/*.yaml"
+    scan: true
+    priority: medium
+    comment: "Kubernetes templates"
+  
+  - pattern: "**/templates/**/*.tpl"
+    scan: true
+    priority: medium
+    comment: "Helper templates"
+  
+  # Secrets templates (should reference values, not hardcode)
+  - pattern: "**/templates/secret*.yaml"
+    scan: true
+    priority: high
+    comment: "Secret templates - verify no hardcoded secrets"
+  
+  - pattern: "**/templates/*secret*.yaml"
+    scan: true
+    priority: high
+    comment: "Secret-related templates"
+  
+  # Chart metadata
+  - pattern: "**/Chart.yaml"
+    scan: true
+    priority: low
+    comment: "Chart metadata"
+  
+  # Requirements
+  - pattern: "**/requirements.yaml"
+    scan: true
+    priority: low
+    comment: "Chart dependencies"
+  
+  # README and examples
+  - pattern: "**/README.md"
+    scan: true
+    priority: low
+    comment: "Documentation may contain example secrets"
+  
+  - pattern: "**/examples/**/*.yaml"
+    scan: true
+    priority: medium
+    comment: "Example configurations"
+  
+  # CI/CD files
+  - pattern: "**/.github/**/*.yaml"
+    scan: true
+    priority: high
+    comment: "GitHub Actions workflows"
+  
+  - pattern: "**/.gitlab-ci.yml"
+    scan: true
+    priority: high
+    comment: "GitLab CI configuration"
+
+# Exit code
+exit-zero: false
+
+# Output
+output:
+  format: text
+  show-secrets: false
+
+# Reporting
+report:
+  dashboard: false
+  break-on-detection: true
+
+# Helm-specific custom rules
+custom-rules:
+  # Hardcoded passwords in values.yaml
+  - name: Password in Values File
+    pattern: '^\s*password:\s*["\']?[^"\'\s\{]{8,}'
+    type: password
+    severity: critical
+  
+  - name: Admin Password in Values
+    pattern: '^\s*(adminPassword|rootPassword):\s*["\']?[^"\'\s\{]{8,}'
+    type: password
+    severity: critical
+  
+  # API keys in values
+  - name: API Key in Values
+    pattern: '^\s*apiKey:\s*["\']?[A-Za-z0-9]{20,}'
+    type: api_key
+    severity: critical
+  
+  - name: Secret Key in Values
+    pattern: '^\s*secretKey:\s*["\']?[A-Za-z0-9]{20,}'
+    type: api_key
+    severity: critical
+  
+  # Database connection strings
+  - name: Database URL in Values
+    pattern: '^\s*databaseUrl:\s*["\']?(postgres|mysql|mongodb)://[^:]+:[^@]+@'
+    type: connection_string
+    severity: critical
+  
+  # AWS credentials
+  - name: AWS Access Key in Values
+    pattern: '^\s*accessKeyId:\s*["\']?AKIA[0-9A-Z]{16}'
+    type: aws
+    severity: critical
+  
+  - name: AWS Secret Key in Values
+    pattern: '^\s*secretAccessKey:\s*["\']?[A-Za-z0-9/+=]{40}'
+    type: aws
+    severity: critical
+  
+  # GitHub tokens
+  - name: GitHub Token in Values
+    pattern: '^\s*(githubToken|github_token):\s*["\']?(ghp_|github_pat_)[A-Za-z0-9_]+'
+    type: github
+    severity: critical
+  
+  # Private keys in values
+  - name: Private Key in Values
+    pattern: '^\s*privateKey:\s*\|?\s*-----BEGIN.*PRIVATE KEY-----'
+    type: private_key
+    severity: critical
+  
+  # TLS keys
+  - name: TLS Key in Values
+    pattern: '^\s*tls:\s*\n\s+key:\s*\|?\s*-----BEGIN.*PRIVATE KEY-----'
+    type: private_key
+    severity: critical
+  
+  # Docker registry credentials
+  - name: Docker Registry Password
+    pattern: '^\s*registry:\s*\n.*password:\s*["\']?[^"\'\s\{]{8,}'
+    type: password
+    severity: critical
+  
+  # Base64 encoded secrets (high entropy)
+  - name: Base64 Secret in Values
+    pattern: '^\s*[a-z]+Secret:\s*["\']?[A-Za-z0-9+/]{40,}={0,2}'
+    type: secret
+    severity: high
+
+# Allowed patterns (good Helm practices)
+allowed-patterns:
+  # Template references (GOOD)
+  - name: Values reference in template
+    pattern: '\{\{\s*\.Values\.'
+    comment: "Using Helm values - correct"
+  
+  - name: Secret reference in template
+    pattern: '\{\{\s*\.Values\..*\.existingSecret'
+    comment: "Referencing existing secret - good practice"
+  
+  # External secret references (GOOD)
+  - name: External secret enabled
+    pattern: 'externalSecret:\s*\n\s+enabled:\s*true'
+    comment: "Using external secrets - good practice"
+  
+  # Sealed secret references (GOOD)
+  - name: Sealed secret reference
+    pattern: 'sealedSecret:\s*\n\s+enabled:\s*true'
+    comment: "Using sealed secrets - good practice"
+  
+  # Secret store references (GOOD)
+  - name: Secret store reference
+    pattern: 'secretStoreRef:'
+    comment: "Using secret store - good practice"
+  
+  # ConfigMap/Secret key references (GOOD)
+  - name: Secret key ref
+    pattern: 'secretKeyRef:\s*\n\s+name:'
+    comment: "Kubernetes secret reference - correct"
+  
+  # Empty/placeholder values (GOOD)
+  - name: Empty password field
+    pattern: 'password:\s*["\']?["\']?\s*$'
+    comment: "Empty value - will be set externally"
+  
+  - name: Placeholder password
+    pattern: 'password:\s*["\']?<.*>["\']?'
+    comment: "Placeholder - will be replaced"
+
+# Specific warnings for Helm
+warnings:
+  - pattern: 'password:\s*[^<\{]'
+    message: "Consider using existingSecret instead of hardcoded password"
+    severity: warning
+  
+  - pattern: 'apiKey:\s*[^<\{]'
+    message: "Consider using existingSecret for API keys"
+    severity: warning
+  
+  - pattern: 'enabled:\s*true\s*\n\s+password:'
+    message: "When a service is enabled, ensure password is from external secret"
+    severity: warning
