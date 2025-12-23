@@ -1,0 +1,285 @@
+# GitGuardian Configuration - Terraform
+# Secret detection for Terraform/OpenTofu infrastructure code
+# Place this file at the root of your repository as .gitguardian.yaml
+
+version: 2
+
+# Terraform specific paths to ignore
+paths-ignore:
+  - "**/.terraform/**"
+  - "**/.terraform.lock.hcl"
+  - "**/terraform.tfstate*"
+  - "**/.terragrunt-cache/**"
+  - "**/crash.log"
+
+# Detectors
+secret-scan:
+  detectors:
+    # Cloud Provider Credentials (HIGH PRIORITY for Terraform)
+    - name: AWS Access Key
+      detector_group: aws
+      enabled: true
+    
+    - name: AWS Secret Key
+      detector_group: aws
+      enabled: true
+    
+    - name: AWS Session Token
+      detector_group: aws
+      enabled: true
+    
+    - name: GCP API Key
+      detector_group: gcp
+      enabled: true
+    
+    - name: GCP Service Account Key
+      detector_group: gcp
+      enabled: true
+    
+    - name: Azure Storage Account Key
+      detector_group: azure
+      enabled: true
+    
+    - name: Azure Client Secret
+      detector_group: azure
+      enabled: true
+    
+    - name: DigitalOcean Token
+      detector_group: digitalocean
+      enabled: true
+    
+    # Version Control (for module sources)
+    - name: GitHub Personal Access Token
+      detector_group: github
+      enabled: true
+    
+    - name: GitLab Personal Access Token
+      detector_group: gitlab
+      enabled: true
+    
+    # Terraform Cloud/Enterprise
+    - name: Terraform Cloud API Token
+      detector_group: terraform
+      enabled: true
+    
+    # Database Credentials
+    - name: Database Connection String
+      detector_group: database
+      enabled: true
+    
+    - name: PostgreSQL Connection String
+      detector_group: database
+      enabled: true
+    
+    - name: MySQL Connection String
+      detector_group: database
+      enabled: true
+    
+    # Private Keys (SSH for provisioners)
+    - name: RSA Private Key
+      detector_group: private_key
+      enabled: true
+    
+    - name: SSH Private Key
+      detector_group: private_key
+      enabled: true
+    
+    - name: TLS Private Key
+      detector_group: private_key
+      enabled: true
+    
+    # Generic
+    - name: Generic High Entropy Secret
+      detector_group: generic
+      enabled: true
+    
+    - name: Generic Password
+      detector_group: generic
+      enabled: true
+    
+    - name: Basic Auth
+      detector_group: generic
+      enabled: true
+    
+    # API Keys
+    - name: Slack Token
+      detector_group: slack
+      enabled: true
+    
+    - name: SendGrid API Key
+      detector_group: sendgrid
+      enabled: true
+    
+    - name: Stripe API Key
+      detector_group: stripe
+      enabled: true
+
+# Terraform-specific exclusions
+matches-ignore:
+  # Example/placeholder values
+  - name: Example AWS key
+    match: AKIAIOSFODNN7EXAMPLE
+  
+  - name: Placeholder tokens
+    match: <YOUR_.*>
+  
+  - name: Variable interpolation
+    match: \$\{var\..*\}
+  
+  - name: Data source reference
+    match: \$\{data\..*\}
+  
+  - name: Resource reference
+    match: \$\{.*\..*\..*\}
+  
+  - name: Terraform variable syntax
+    match: var\..*
+  
+  # Test/example passwords
+  - name: Example passwords
+    match: (changeme|password123|example)
+
+# File patterns for Terraform
+file-patterns:
+  # Terraform files (CRITICAL)
+  - pattern: "**/*.tf"
+    scan: true
+    priority: critical
+    comment: "Main Terraform configuration files"
+  
+  # Variable files
+  - pattern: "**/*.tfvars"
+    scan: true
+    priority: critical
+    comment: "Variable value files - HIGH RISK for secrets!"
+  
+  # Auto-generated tfvars
+  - pattern: "**/terraform.tfvars"
+    scan: true
+    priority: critical
+    comment: "Default variable values file"
+  
+  # JSON variable files
+  - pattern: "**/*.tfvars.json"
+    scan: true
+    priority: critical
+    comment: "JSON format variable files"
+  
+  # Backend config files
+  - pattern: "**/backend.hcl"
+    scan: true
+    priority: high
+    comment: "Backend configuration may contain credentials"
+  
+  # Provider config files
+  - pattern: "**/provider*.tf"
+    scan: true
+    priority: critical
+    comment: "Provider blocks often contain credentials"
+  
+  # Terragrunt files
+  - pattern: "**/terragrunt.hcl"
+    scan: true
+    priority: high
+    comment: "Terragrunt configuration"
+  
+  # Environment files
+  - pattern: "**/.env*"
+    scan: true
+    priority: high
+    comment: "Environment variables for Terraform"
+  
+  # Shell scripts (for automation)
+  - pattern: "**/*.sh"
+    scan: true
+    priority: medium
+    comment: "Shell scripts may export secrets"
+
+# Exit code
+exit-zero: false
+
+# Output
+output:
+  format: text
+  show-secrets: false
+
+# Reporting
+report:
+  dashboard: false
+  break-on-detection: true
+
+# Terraform-specific custom rules
+custom-rules:
+  # Hardcoded passwords in resources
+  - name: Password in Terraform Resource
+    pattern: 'password\s*=\s*"[^"]{8,}"'
+    type: password
+    severity: critical
+  
+  # API keys in provider blocks
+  - name: API Key in Provider Block
+    pattern: 'api_key\s*=\s*"[A-Za-z0-9]{20,}"'
+    type: api_key
+    severity: critical
+  
+  # Hardcoded AWS credentials
+  - name: AWS Credentials in Provider
+    pattern: '(access_key|secret_key)\s*=\s*"[^"]+"\s*\n'
+    type: aws
+    severity: critical
+  
+  # Connection strings in provisioners
+  - name: Connection String in Provisioner
+    pattern: 'connection_string\s*=\s*"[^"]*password[^"]*"'
+    type: connection_string
+    severity: critical
+  
+  # SSH keys in file provisioners
+  - name: SSH Key in Provisioner
+    pattern: 'private_key\s*=\s*"-----BEGIN.*PRIVATE KEY-----'
+    type: private_key
+    severity: critical
+  
+  # Tokens in remote state backend
+  - name: Token in Backend Config
+    pattern: 'token\s*=\s*"[A-Za-z0-9]{20,}"'
+    type: token
+    severity: critical
+  
+  # Database passwords in RDS/database resources
+  - name: Database Password in Resource
+    pattern: '(master_password|admin_password|root_password)\s*=\s*"[^"]{8,}"'
+    type: password
+    severity: critical
+
+# Allowed patterns (good practices)
+allowed-patterns:
+  # Variable references (GOOD)
+  - name: Variable reference
+    pattern: 'password\s*=\s*var\.'
+    comment: "Using variable - good practice"
+  
+  # Data source references (GOOD)
+  - name: Data source reference
+    pattern: 'password\s*=\s*data\.'
+    comment: "Using data source - good practice"
+  
+  # Random password resource (GOOD)
+  - name: Random password resource
+    pattern: 'password\s*=\s*random_password\.'
+    comment: "Using random_password resource - good practice"
+  
+  # AWS Secrets Manager reference (GOOD)
+  - name: Secrets Manager reference
+    pattern: 'data\s+"aws_secretsmanager_secret'
+    comment: "Using Secrets Manager - good practice"
+  
+  # Vault reference (GOOD)
+  - name: Vault reference
+    pattern: 'data\s+"vault_'
+    comment: "Using Vault - good practice"
+  
+  # SSM Parameter reference (GOOD)
+  - name: SSM Parameter reference
+    pattern: 'data\s+"aws_ssm_parameter'
+    comment: "Using SSM Parameter Store - good practice"
