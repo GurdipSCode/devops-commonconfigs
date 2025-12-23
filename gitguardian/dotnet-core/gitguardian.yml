@@ -1,0 +1,347 @@
+# GitGuardian Configuration - ArgoCD
+# Secret detection for ArgoCD GitOps repositories
+# Place this file at the root of your repository as .gitguardian.yaml
+
+version: 2
+
+# ArgoCD specific paths to ignore
+paths-ignore:
+  - "**/.git/**"
+  - "**/node_modules/**"
+  - "**/.argocd/**"
+
+# Detectors - emphasizing secrets commonly found in ArgoCD repos
+secret-scan:
+  detectors:
+    # Cloud Providers
+    - name: AWS Access Key
+      detector_group: aws
+      enabled: true
+    
+    - name: AWS Secret Key
+      detector_group: aws
+      enabled: true
+    
+    - name: GCP API Key
+      detector_group: gcp
+      enabled: true
+    
+    - name: GCP Service Account Key
+      detector_group: gcp
+      enabled: true
+    
+    - name: Azure Storage Account Key
+      detector_group: azure
+      enabled: true
+    
+    - name: Azure Client Secret
+      detector_group: azure
+      enabled: true
+    
+    # Version Control (for repository access)
+    - name: GitHub Personal Access Token
+      detector_group: github
+      enabled: true
+    
+    - name: GitHub App Token
+      detector_group: github
+      enabled: true
+    
+    - name: GitLab Personal Access Token
+      detector_group: gitlab
+      enabled: true
+    
+    - name: GitLab Pipeline Token
+      detector_group: gitlab
+      enabled: true
+    
+    # API Services
+    - name: Slack Token
+      detector_group: slack
+      enabled: true
+    
+    - name: Slack Webhook URL
+      detector_group: slack
+      enabled: true
+    
+    - name: SendGrid API Key
+      detector_group: sendgrid
+      enabled: true
+    
+    - name: Twilio API Key
+      detector_group: twilio
+      enabled: true
+    
+    - name: Stripe API Key
+      detector_group: stripe
+      enabled: true
+    
+    # Database
+    - name: Database Connection String
+      detector_group: database
+      enabled: true
+    
+    - name: PostgreSQL Connection String
+      detector_group: database
+      enabled: true
+    
+    - name: MySQL Connection String
+      detector_group: database
+      enabled: true
+    
+    - name: MongoDB Connection String
+      detector_group: database
+      enabled: true
+    
+    # Container Registry
+    - name: Docker Hub Token
+      detector_group: docker
+      enabled: true
+    
+    - name: Docker Registry Auth
+      detector_group: docker
+      enabled: true
+    
+    # Private Keys
+    - name: RSA Private Key
+      detector_group: private_key
+      enabled: true
+    
+    - name: SSH Private Key
+      detector_group: private_key
+      enabled: true
+    
+    - name: TLS Private Key
+      detector_group: private_key
+      enabled: true
+    
+    - name: X.509 Certificate Private Key
+      detector_group: private_key
+      enabled: true
+    
+    # Generic
+    - name: Generic High Entropy Secret
+      detector_group: generic
+      enabled: true
+    
+    - name: Generic Password
+      detector_group: generic
+      enabled: true
+    
+    - name: JWT Token
+      detector_group: generic
+      enabled: true
+    
+    - name: Basic Auth
+      detector_group: generic
+      enabled: true
+
+# ArgoCD-specific exclusions
+matches-ignore:
+  # Sealed Secrets (encrypted - OK)
+  - name: Sealed Secret encrypted data
+    match: 'encryptedData:'
+  
+  # External Secrets references (OK)
+  - name: External Secret reference
+    match: 'secretStoreRef:'
+  
+  # Placeholder values
+  - name: Placeholders
+    match: '<.*>'
+  
+  - name: Template variables
+    match: '\{\{.*\}\}'
+  
+  - name: ArgoCD template syntax
+    match: '\$\{.*\}'
+  
+  # Example secrets
+  - name: Example tokens
+    match: 'your-token-here'
+  
+  - name: Example passwords
+    match: '(changeme|password123|example)'
+
+# File patterns for ArgoCD
+file-patterns:
+  # ArgoCD Application manifests (HIGH RISK)
+  - pattern: "**/applications/**/*.yaml"
+    scan: true
+    priority: critical
+    comment: "ArgoCD Application definitions"
+  
+  - pattern: "**/apps/**/*.yaml"
+    scan: true
+    priority: critical
+    comment: "Application manifests"
+  
+  # ApplicationSets
+  - pattern: "**/applicationsets/**/*.yaml"
+    scan: true
+    priority: high
+    comment: "ApplicationSet manifests"
+  
+  # ArgoCD Projects
+  - pattern: "**/projects/**/*.yaml"
+    scan: true
+    priority: high
+    comment: "ArgoCD Project definitions"
+  
+  # Helm values files (VERY HIGH RISK)
+  - pattern: "**/values*.yaml"
+    scan: true
+    priority: critical
+    comment: "Helm values files - common location for secrets!"
+  
+  - pattern: "**/values/**/*.yaml"
+    scan: true
+    priority: critical
+    comment: "Helm values directory"
+  
+  # Kustomize files
+  - pattern: "**/kustomization.yaml"
+    scan: true
+    priority: high
+    comment: "Kustomize configuration"
+  
+  - pattern: "**/kustomize/**/*.yaml"
+    scan: true
+    priority: high
+    comment: "Kustomize overlays/bases"
+  
+  # Kubernetes manifests
+  - pattern: "**/*.yaml"
+    scan: true
+    priority: medium
+    comment: "All YAML files (Kubernetes manifests)"
+  
+  # Secrets (should be sealed, but scan anyway)
+  - pattern: "**/secrets/**/*.yaml"
+    scan: true
+    priority: critical
+    comment: "Secrets directory - MUST be encrypted!"
+  
+  # Sealed Secrets (scan to ensure properly encrypted)
+  - pattern: "**/sealed-secrets/**/*.yaml"
+    scan: true
+    priority: low
+    comment: "Sealed secrets - verify encryption"
+  
+  # External Secrets
+  - pattern: "**/external-secrets/**/*.yaml"
+    scan: true
+    priority: low
+    comment: "External secret references"
+  
+  # ConfigMaps (sometimes contain secrets by mistake)
+  - pattern: "**/configmaps/**/*.yaml"
+    scan: true
+    priority: medium
+    comment: "ConfigMaps may accidentally contain secrets"
+  
+  # Environment files
+  - pattern: "**/.env*"
+    scan: true
+    priority: critical
+    comment: "Environment files"
+
+# Exit code
+exit-zero: false
+
+# Output
+output:
+  format: text
+  show-secrets: false
+
+# Reporting
+report:
+  dashboard: false
+  break-on-detection: true
+
+# ArgoCD-specific custom rules
+custom-rules:
+  # Secrets in Helm values
+  - name: Password in Helm Values
+    pattern: '^\s*password:\s*["\']?[^"\'\s]{8,}'
+    type: password
+    severity: critical
+  
+  - name: API Key in Helm Values
+    pattern: '^\s*apiKey:\s*["\']?[A-Za-z0-9]{20,}'
+    type: api_key
+    severity: critical
+  
+  # Secrets in ArgoCD Application spec
+  - name: Secret in Application Values
+    pattern: 'helm:\s+values:\s+\|.*password:\s*[^$]'
+    type: password
+    severity: critical
+  
+  # Database URLs in values
+  - name: Database URL with Password
+    pattern: '(postgres|mysql|mongodb)://[^:]+:[^@]+@'
+    type: connection_string
+    severity: critical
+  
+  # AWS credentials in values
+  - name: AWS Credentials in Values
+    pattern: '(accessKeyId|secretAccessKey):\s*["\']?[A-Z0-9]{16,}'
+    type: aws
+    severity: critical
+  
+  # GitHub tokens in values
+  - name: GitHub Token in Values
+    pattern: '(github_token|githubToken):\s*["\']?(ghp_|github_pat_)[A-Za-z0-9_]+'
+    type: github
+    severity: critical
+  
+  # Private keys in ConfigMaps/Secrets
+  - name: Private Key in Manifest
+    pattern: '^\s+[a-z-]*key:\s*\|?\s*-----BEGIN.*PRIVATE KEY-----'
+    type: private_key
+    severity: critical
+  
+  # Docker registry credentials
+  - name: Docker Registry Password
+    pattern: '\.dockerconfigjson:\s*.*"auth":\s*"[A-Za-z0-9+/=]+"'
+    type: docker
+    severity: critical
+  
+  # TLS certificates with keys
+  - name: TLS Private Key
+    pattern: 'tls\.key:\s*\|?\s*-----BEGIN.*PRIVATE KEY-----'
+    type: private_key
+    severity: critical
+
+# Allowed patterns (good practices in ArgoCD)
+allowed-patterns:
+  # Sealed Secrets (encrypted data - GOOD)
+  - name: Sealed Secret encrypted data
+    pattern: 'encryptedData:\s*\n\s+\w+:\s+Ag[A-Za-z0-9+/=]+'
+    comment: "Encrypted by kubeseal - safe"
+  
+  # External Secrets references (GOOD)
+  - name: External Secret reference
+    pattern: 'kind:\s+ExternalSecret'
+    comment: "Using External Secrets Operator - safe"
+  
+  # Secret references in values (GOOD)
+  - name: Existing secret reference
+    pattern: 'existingSecret:\s+[a-z0-9-]+'
+    comment: "Referencing existing secret - good practice"
+  
+  # Vault references (GOOD)
+  - name: Vault path reference
+    pattern: '<path:[^>]+>'
+    comment: "Vault secret reference - safe"
+  
+  # Secret key references (GOOD)
+  - name: Secret key reference
+    pattern: 'secretKeyRef:\s*\n\s+name:'
+    comment: "Kubernetes secret reference - safe"
+  
+  # ConfigMap references (GOOD)
+  - name: ConfigMap reference
+    pattern: 'configMapKeyRef:\s*\n\s+name:'
+    comment: "ConfigMap reference - safe"
