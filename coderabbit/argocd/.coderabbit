@@ -1,1 +1,859 @@
+# CodeRabbit Configuration for ArgoCD GitOps Repositories
+# Includes GitGuardian-style secret detection and ArgoCD best practices
+# Place this file at the root of your ArgoCD repository as .coderabbit.yaml
 
+version: 1.0
+
+# Language settings
+language: en-US
+
+# Early access features
+early_access: true
+
+# Review settings
+reviews:
+  # Review profile
+  profile: assertive  # Strict for GitOps repos
+  
+  # Request changes workflow
+  request_changes_workflow: true
+  
+  # High level summary
+  high_level_summary: true
+  
+  # Poem style for summaries
+  poem: false
+  
+  # Review status
+  review_status: true
+  
+  # Collapse walkthrough
+  collapse_walkthrough: false
+  
+  # Auto review
+  auto_review:
+    enabled: true
+    
+    # Ignore specific file patterns
+    ignore_patterns:
+      - "**/*.md"
+      - "**/LICENSE"
+      - "**/.gitignore"
+      - "**/CHANGELOG.md"
+    
+    # Auto-approve trivial changes
+    auto_approve:
+      enabled: true
+      conditions:
+        - type: "documentation"
+          max_files: 2
+  
+  # Tools to use
+  tools:
+    # YAML linting
+    yamllint:
+      enabled: true
+      rules:
+        line-length:
+          max: 120
+        indentation:
+          spaces: 2
+    
+    # Security scanning
+    security:
+      enabled: true
+
+# Path-specific instructions
+path_instructions:
+  # ArgoCD Application manifests
+  - path: "**/applications/**/*.yaml"
+    instructions: |
+      For ArgoCD Application manifests, check:
+      
+      1. GITGUARDIAN - SECRETS DETECTION (CRITICAL)
+         Scan for all types of secrets and credentials:
+         
+         A. API KEYS AND TOKENS
+         - AWS Access Keys: AKIA[0-9A-Z]{16}
+         - GitHub Tokens: ghp_[a-zA-Z0-9]{36}, github_pat_[a-zA-Z0-9]{82}
+         - GitLab Tokens: glpat-[a-zA-Z0-9_-]{20}
+         - Slack Tokens: xox[baprs]-[0-9]{10,12}-[0-9]{10,12}-[a-zA-Z0-9]{24,32}
+         - Stripe Keys: sk_live_[a-zA-Z0-9]{24,}
+         - Heroku API Keys: [0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}
+         - Google API Keys: AIza[0-9A-Za-z_-]{35}
+         - Azure Access Tokens: [a-zA-Z0-9/+=]{86}==
+         
+         B. PASSWORDS AND CREDENTIALS
+         - Generic passwords: password[:=]\s*['\"][^'\"]+['\"]
+         - Database URLs with credentials: postgres://user:pass@host
+         - Connection strings with passwords
+         - Basic auth credentials: Authorization: Basic [A-Za-z0-9+/=]+
+         
+         C. PRIVATE KEYS AND CERTIFICATES
+         - SSH Private Keys: -----BEGIN.*PRIVATE KEY-----
+         - RSA Keys: -----BEGIN RSA PRIVATE KEY-----
+         - PGP Keys: -----BEGIN PGP PRIVATE KEY-----
+         - X.509 Certificates with private keys
+         
+         D. JWT TOKENS
+         - JWT patterns: eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*
+         
+         E. CLOUD PROVIDER CREDENTIALS
+         - AWS Secret Keys: [A-Za-z0-9/+=]{40}
+         - GCP Service Account Keys (JSON)
+         - Azure Storage Account Keys
+         - DigitalOcean Tokens
+         
+         F. CI/CD SECRETS
+         - Jenkins Tokens
+         - CircleCI Tokens
+         - Travis CI Tokens
+         - GitLab CI Variables
+         
+         Examples to FLAG:
+         ```yaml
+         # ❌ CRITICAL: Hardcoded password
+         helm:
+           values: |
+             database:
+               password: MyPassword123!
+         
+         # ❌ CRITICAL: API token in values
+         helm:
+           parameters:
+             - name: apiToken
+               value: ghp_1234567890abcdefghijklmnopqrstuv
+         
+         # ❌ CRITICAL: AWS key
+         helm:
+           values: |
+             aws:
+               accessKeyId: AKIAIOSFODNN7EXAMPLE
+               secretAccessKey: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+         
+         # ❌ CRITICAL: Private key
+         data:
+           tls.key: |
+             -----BEGIN RSA PRIVATE KEY-----
+             MIIEpAIBAAKCAQEA...
+         ```
+         
+         Require:
+         ```yaml
+         # ✅ GOOD: Reference to Sealed Secret
+         helm:
+           values: |
+             database:
+               passwordSecret:
+                 name: db-credentials
+                 key: password
+         
+         # ✅ GOOD: External Secrets Operator
+         helm:
+           values: |
+             externalSecrets:
+               enabled: true
+               secretStore: vault-backend
+         
+         # ✅ GOOD: Placeholder for actual secret
+         helm:
+           parameters:
+             - name: apiTokenSecret
+               value: <path:secret/data/api#token>
+         ```
+      
+      2. SOURCE REPOSITORY VALIDATION
+         - Validate repoURL is HTTPS (not HTTP)
+         - Check targetRevision is specified (not HEAD)
+         - Verify path exists in repository
+         - Validate branch/tag naming
+         
+         Flag:
+         ```yaml
+         # ⚠️ WARNING: No targetRevision
+         source:
+           repoURL: https://github.com/company/repo
+           path: apps/production
+           # Missing targetRevision!
+         
+         # ⚠️ WARNING: Using HEAD
+         source:
+           targetRevision: HEAD  # Unstable!
+         
+         # ❌ CRITICAL: HTTP (not HTTPS)
+         source:
+           repoURL: http://github.com/company/repo
+         ```
+         
+         Require:
+         ```yaml
+         # ✅ GOOD: Pinned to specific version
+         source:
+           repoURL: https://github.com/company/manifests
+           targetRevision: v1.2.3  # Or commit SHA
+           path: apps/production
+         ```
+      
+      3. SYNC POLICY VALIDATION
+         - Automated sync should have proper settings
+         - Prune should be explicit
+         - SelfHeal should be documented
+         - Check for appropriate retry settings
+         
+         Flag:
+         ```yaml
+         # ⚠️ WARNING: Auto-sync without prune
+         syncPolicy:
+           automated:
+             selfHeal: true
+             # Missing prune: true - orphaned resources!
+         
+         # ⚠️ WARNING: No retry limit
+         syncPolicy:
+           retry:
+             # Infinite retries can cause issues
+         ```
+         
+         Require:
+         ```yaml
+         # ✅ GOOD: Complete sync policy
+         syncPolicy:
+           automated:
+             prune: true      # Remove orphaned resources
+             selfHeal: true   # Auto-correct drift
+             allowEmpty: false
+           syncOptions:
+             - CreateNamespace=true
+             - PrunePropagationPolicy=foreground
+             - PruneLast=true
+           retry:
+             limit: 5
+             backoff:
+               duration: 5s
+               factor: 2
+               maxDuration: 3m
+         ```
+      
+      4. DESTINATION VALIDATION
+         - Namespace should be specified
+         - Server should be explicit (not in-cluster for multi-cluster)
+         - Validate cluster name if using name-based addressing
+         
+         Flag:
+         ```yaml
+         # ⚠️ WARNING: No namespace specified
+         destination:
+           server: https://kubernetes.default.svc
+           # Missing namespace!
+         
+         # ⚠️ WARNING: Using in-cluster for remote
+         destination:
+           server: https://kubernetes.default.svc
+           # Should use actual cluster URL for remote clusters
+         ```
+         
+         Require:
+         ```yaml
+         # ✅ GOOD: Explicit destination
+         destination:
+           server: https://prod-cluster.company.local
+           namespace: production-app
+         
+         # ✅ GOOD: With cluster name
+         destination:
+           name: prod-cluster-01
+           namespace: production-app
+         ```
+      
+      5. IGNORED DIFFERENCES
+         - Document why differences are ignored
+         - Keep ignore list minimal
+         - Use JSONPointers for precision
+         
+         Flag:
+         ```yaml
+         # ⚠️ WARNING: Ignoring too much
+         ignoreDifferences:
+           - group: "*"
+             kind: "*"
+             jsonPointers:
+               - "*"  # Ignoring everything!
+         ```
+         
+         Require:
+         ```yaml
+         # ✅ GOOD: Specific ignore with reason
+         ignoreDifferences:
+           # Ignore replicas as HPA manages this
+           - group: apps
+             kind: Deployment
+             jsonPointers:
+               - /spec/replicas
+         ```
+      
+      6. RESOURCE CUSTOMIZATIONS
+         - Health checks should be defined for CRDs
+         - Actions should be documented
+         - Validate health assessment logic
+         
+         Good:
+         ```yaml
+         # ✅ GOOD: Custom health check
+         spec:
+           source:
+             plugin:
+               name: my-plugin
+           # Custom health check in argocd-cm ConfigMap
+         ```
+      
+      7. PROJECT REFERENCE
+         - Application should reference a Project
+         - Project should exist
+         - Validate project RBAC
+         
+         Flag:
+         ```yaml
+         # ⚠️ WARNING: No project specified
+         apiVersion: argoproj.io/v1alpha1
+         kind: Application
+         metadata:
+           name: my-app
+         spec:
+           # Missing project!
+         ```
+         
+         Require:
+         ```yaml
+         # ✅ GOOD: With project
+         apiVersion: argoproj.io/v1alpha1
+         kind: Application
+         metadata:
+           name: my-app
+         spec:
+           project: production
+         ```
+  
+  # ApplicationSet manifests
+  - path: "**/applicationsets/**/*.yaml"
+    instructions: |
+      For ArgoCD ApplicationSet manifests, check:
+      
+      1. GITGUARDIAN - SECRETS IN GENERATORS
+         - Check Git generator credentials
+         - Check SCM provider tokens
+         - Check API tokens in generators
+         
+         Flag:
+         ```yaml
+         # ❌ CRITICAL: Token in generator
+         generators:
+           - scmProvider:
+               github:
+                 tokenRef:
+                   key: token
+                   secretName: github-token
+                 # Better, but check the secret doesn't contain plaintext!
+         ```
+      
+      2. GENERATOR VALIDATION
+         - Validate generator types are appropriate
+         - Check for excessive applications (>100 apps)
+         - Verify template parameters are used
+         
+         Flag:
+         ```yaml
+         # ⚠️ WARNING: Potentially creating too many apps
+         generators:
+           - git:
+               repoURL: https://github.com/company/repos
+               directories:
+                 - path: "*"  # Could match hundreds!
+         ```
+      
+      3. TEMPLATE VALIDATION
+         - All generator values should be used in template
+         - Template should have proper metadata
+         - Validate destination templating
+         
+         Good:
+         ```yaml
+         # ✅ GOOD: Complete template
+         template:
+           metadata:
+             name: '{{path.basename}}'
+             labels:
+               environment: '{{path[0]}}'
+           spec:
+             project: default
+             source:
+               repoURL: https://github.com/company/manifests
+               targetRevision: '{{branch}}'
+               path: '{{path}}'
+             destination:
+               server: https://kubernetes.default.svc
+               namespace: '{{path.basename}}'
+         ```
+      
+      4. PROGRESSIVE ROLLOUT
+         - Check for progressive sync strategy
+         - Validate rollout steps
+         - Document rollout plan
+         
+         Good:
+         ```yaml
+         # ✅ GOOD: Progressive rollout
+         strategy:
+           type: RollingSync
+           rollingSync:
+             steps:
+               - matchExpressions:
+                   - key: env
+                     operator: In
+                     values: [dev]
+               - matchExpressions:
+                   - key: env
+                     operator: In
+                     values: [staging]
+               - matchExpressions:
+                   - key: env
+                     operator: In
+                     values: [production]
+         ```
+  
+  # Helm values files
+  - path: "**/values*.yaml"
+    instructions: |
+      For Helm values files in ArgoCD repo, check:
+      
+      1. GITGUARDIAN - COMPREHENSIVE SECRET SCAN
+         Scan for ALL secret types:
+         
+         A. PASSWORDS
+         ```yaml
+         # ❌ CRITICAL: Hardcoded password
+         database:
+           password: "MyP@ssw0rd!"
+         
+         # ❌ CRITICAL: Admin credentials
+         admin:
+           username: admin
+           password: admin123
+         ```
+         
+         B. API KEYS
+         ```yaml
+         # ❌ CRITICAL: API keys
+         api:
+           key: "sk_live_51abc123def456"
+           token: "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
+         ```
+         
+         C. DATABASE URLS
+         ```yaml
+         # ❌ CRITICAL: Connection string with password
+         database:
+           url: "postgresql://user:password@postgres:5432/db"
+         ```
+         
+         D. CERTIFICATES AND KEYS
+         ```yaml
+         # ❌ CRITICAL: TLS private key
+         tls:
+           key: |
+             -----BEGIN PRIVATE KEY-----
+             MIIEvQIBADANBgkqhkiG9w0BAQEF...
+         ```
+         
+         E. CLOUD CREDENTIALS
+         ```yaml
+         # ❌ CRITICAL: AWS credentials
+         aws:
+           accessKeyId: "AKIAIOSFODNN7EXAMPLE"
+           secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+         
+         # ❌ CRITICAL: GCP service account
+         gcp:
+           serviceAccountKey: |
+             {
+               "type": "service_account",
+               "project_id": "my-project",
+               "private_key_id": "abc123",
+               "private_key": "-----BEGIN PRIVATE KEY-----..."
+             }
+         ```
+         
+         Require:
+         ```yaml
+         # ✅ GOOD: Reference to external secret
+         database:
+           existingSecret: db-credentials
+           passwordKey: password
+         
+         # ✅ GOOD: External Secrets Operator
+         externalSecrets:
+           enabled: true
+           data:
+             - secretKey: apiToken
+               remoteRef:
+                 key: /prod/api/token
+         
+         # ✅ GOOD: Sealed Secrets
+         sealedSecrets:
+           enabled: true
+           encryptedData:
+             password: AgBh8N2... # Encrypted by kubeseal
+         ```
+      
+      2. ENVIRONMENT-SPECIFIC VALUES
+         - No production secrets in dev values
+         - Clear separation of environments
+         - Document value overrides
+         
+         Flag:
+         ```yaml
+         # ⚠️ WARNING: Production URL in dev values
+         # File: values-dev.yaml
+         api:
+           url: https://api.production.company.com  # Wrong environment!
+         ```
+      
+      3. RESOURCE LIMITS
+         - All containers should have limits
+         - Check for appropriate values
+         - Validate requests vs limits ratio
+         
+         Flag:
+         ```yaml
+         # ⚠️ WARNING: No resource limits
+         resources: {}
+         ```
+         
+         Require:
+         ```yaml
+         # ✅ GOOD: With limits
+         resources:
+           requests:
+             cpu: 100m
+             memory: 128Mi
+           limits:
+             cpu: 200m
+             memory: 256Mi
+         ```
+  
+  # Kustomize files
+  - path: "**/kustomization.yaml"
+    instructions: |
+      For Kustomize manifests, check:
+      
+      1. GITGUARDIAN - SECRETS IN PATCHES
+         - Check configMapGenerator for secrets
+         - Check secretGenerator for hardcoded data
+         - Validate patch files don't contain secrets
+         
+         Flag:
+         ```yaml
+         # ❌ CRITICAL: Secret in configMapGenerator
+         configMapGenerator:
+           - name: app-config
+             literals:
+               - API_KEY=abc123def456  # Secret in plaintext!
+         
+         # ❌ CRITICAL: Hardcoded secret data
+         secretGenerator:
+           - name: db-credentials
+             literals:
+               - password=MyPassword123!  # Should use sealed secret!
+         ```
+         
+         Require:
+         ```yaml
+         # ✅ GOOD: Reference to sealed secret
+         resources:
+           - sealed-secrets/db-credentials-sealed.yaml
+         
+         # ✅ GOOD: Use external secret
+         resources:
+           - external-secrets/api-credentials.yaml
+         ```
+      
+      2. BASE REFERENCES
+         - Validate base paths exist
+         - Check for circular dependencies
+         - Document overlay structure
+         
+         Good:
+         ```yaml
+         # ✅ GOOD: Clear overlay structure
+         # overlays/production/kustomization.yaml
+         bases:
+           - ../../base
+         patchesStrategicMerge:
+           - deployment-patch.yaml
+         ```
+      
+      3. IMAGE TAGS
+         - No :latest tags in production
+         - Use digests for immutability
+         - Document image update strategy
+         
+         Flag:
+         ```yaml
+         # ⚠️ WARNING: Using latest tag
+         images:
+           - name: myapp
+             newTag: latest  # Not reproducible!
+         ```
+         
+         Require:
+         ```yaml
+         # ✅ GOOD: Pinned version
+         images:
+           - name: myapp
+             newTag: v1.2.3
+         
+         # ✅ BETTER: With digest
+         images:
+           - name: myapp
+             newName: myapp
+             digest: sha256:abc123...
+         ```
+  
+  # Sealed Secrets
+  - path: "**/sealed-secrets/**/*.yaml"
+    instructions: |
+      For Sealed Secrets, check:
+      
+      1. ENCRYPTION VALIDATION
+         - Verify encryptedData field is present
+         - Check sealing scope (strict/namespace/cluster)
+         - Validate certificate fingerprint
+         
+         Good:
+         ```yaml
+         # ✅ GOOD: Properly sealed
+         apiVersion: bitnami.com/v1alpha1
+         kind: SealedSecret
+         metadata:
+           name: db-credentials
+           namespace: production
+         spec:
+           encryptedData:
+             password: AgBh8N2Xt... # Encrypted!
+         ```
+      
+      2. SCOPE VALIDATION
+         - Production secrets should use strict scope
+         - Document why broader scopes used
+         
+         Good:
+         ```yaml
+         # ✅ GOOD: Strict scope for production
+         metadata:
+           annotations:
+             sealedsecrets.bitnami.com/cluster-wide: "false"
+             sealedsecrets.bitnami.com/namespace-wide: "false"
+         ```
+  
+  # ArgoCD Projects
+  - path: "**/projects/**/*.yaml"
+    instructions: |
+      For ArgoCD Project manifests, check:
+      
+      1. SOURCE RESTRICTIONS
+         - Whitelist allowed Git repositories
+         - Restrict to specific branches/tags
+         - Document why repos are allowed
+         
+         Flag:
+         ```yaml
+         # ⚠️ WARNING: Allowing all repos
+         sourceRepos:
+           - '*'  # Too permissive!
+         ```
+         
+         Require:
+         ```yaml
+         # ✅ GOOD: Specific repos only
+         sourceRepos:
+           - https://github.com/company/app-manifests
+           - https://github.com/company/infrastructure
+         ```
+      
+      2. DESTINATION RESTRICTIONS
+         - Whitelist allowed clusters
+         - Whitelist allowed namespaces
+         - Document multi-cluster strategy
+         
+         Flag:
+         ```yaml
+         # ⚠️ WARNING: Allowing all namespaces
+         destinations:
+           - namespace: '*'
+             server: '*'  # Too permissive!
+         ```
+         
+         Require:
+         ```yaml
+         # ✅ GOOD: Specific destinations
+         destinations:
+           - namespace: production-*
+             server: https://prod-cluster.company.local
+           - namespace: staging-*
+             server: https://staging-cluster.company.local
+         ```
+      
+      3. CLUSTER RESOURCE WHITELIST
+         - Explicitly allow cluster-scoped resources
+         - Document why cluster resources needed
+         - Minimal permissions
+         
+         Good:
+         ```yaml
+         # ✅ GOOD: Explicit cluster resources
+         clusterResourceWhitelist:
+           - group: 'rbac.authorization.k8s.io'
+             kind: ClusterRole
+           - group: 'rbac.authorization.k8s.io'
+             kind: ClusterRoleBinding
+         ```
+
+# Custom review instructions
+custom_review_instructions: |
+  This is an ArgoCD GitOps repository with GITGUARDIAN-LEVEL SECRET DETECTION.
+  
+  CRITICAL SECURITY FOCUS:
+  
+  1. GITGUARDIAN - SECRET DETECTION (CRITICAL PRIORITY)
+     Scan for ALL types of secrets:
+     - API Keys (AWS, GitHub, GitLab, Slack, Stripe, Google, Azure, etc.)
+     - Passwords and credentials (any password: field)
+     - Database connection strings with credentials
+     - Private keys (SSH, RSA, PGP, TLS)
+     - JWT tokens
+     - OAuth tokens
+     - Cloud provider credentials (AWS, GCP, Azure, DigitalOcean)
+     - CI/CD secrets (Jenkins, CircleCI, Travis, GitLab)
+     - Service account keys
+     - Certificates with private keys
+     - Basic auth credentials
+     - Bearer tokens
+     
+     EVERY secret type should be flagged with CRITICAL severity.
+     NO secrets should EVER be committed to the repository.
+     
+     Detection patterns:
+     - Pattern matching (regex for known secret formats)
+     - Entropy analysis (high entropy strings likely secrets)
+     - Context analysis (keys named 'password', 'secret', 'token', 'key')
+     - Base64 encoded secrets
+     - Environment variable patterns
+     
+  2. ARGOCD GITOPS BEST PRACTICES
+     - Source repositories must be HTTPS
+     - Target revisions must be pinned (no HEAD)
+     - Sync policies must be explicit
+     - Destinations must specify namespace
+     - Projects must restrict sources and destinations
+     
+  3. SECRETS MANAGEMENT
+     - Use Sealed Secrets (bitnami.com/v1alpha1)
+     - Use External Secrets Operator
+     - Use Vault integration
+     - Reference secrets, never embed them
+     - All secrets must be encrypted
+     
+  4. DRIFT PREVENTION
+     - Automated sync with selfHeal
+     - Proper prune configuration
+     - Ignore differences documented
+     - Health checks for CRDs
+     
+  5. MULTI-ENVIRONMENT SAFETY
+     - Clear environment separation
+     - No production secrets in dev
+     - Environment-specific values files
+     - Progressive rollout strategies
+     
+  6. IMAGE SECURITY
+     - No :latest tags in production
+     - Use image digests
+     - Scan for vulnerable images
+     - Document image sources
+  
+  7. RBAC AND AUTHORIZATION
+     - Project-based access control
+     - Minimal permissions
+     - Cluster resource restrictions
+     - Namespace isolation
+
+# Tone settings
+tone_instructions: |
+  - CRITICAL severity for ANY detected secret
+  - Explain WHERE the secret will be exposed (git history, logs, etc.)
+  - Provide specific remediation steps
+  - For secrets: Show how to use Sealed Secrets or External Secrets
+  - For ArgoCD: Explain impact on sync/deployment
+  - Use emojis: 🔐 secrets, 🚨 critical, ⚠️ warning, ✅ good
+
+# Additional instructions for specific file types
+file_type_instructions:
+  yaml:
+    - "Scan for hardcoded secrets (CRITICAL priority)"
+    - "Check ArgoCD Application syntax"
+    - "Validate sync policies"
+    - "Verify destination configurations"
+    - "Check Helm values for secrets"
+    - "Validate Kustomize structure"
+    - "Check Sealed Secret encryption"
+
+# PR title validation
+pull_requests:
+  title_pattern: "^(feat|fix|docs|refactor|chore|sec)(\\(.+\\))?: .+"
+  title_pattern_error: |
+    PR title must follow conventional commits format:
+    feat(app): add new application
+    fix(sync): correct sync policy
+    sec(secrets): rotate API credentials
+    chore(deps): update image tags
+
+# Knowledge base
+knowledge_base:
+  learnings:
+    enabled: true
+    scope: "repository"
+  opt_in: true
+
+# Chat settings
+chat:
+  auto_reply: true
+
+# Secret patterns for GitGuardian-style detection
+secret_patterns:
+  # AWS
+  aws_access_key: "AKIA[0-9A-Z]{16}"
+  aws_secret_key: "[A-Za-z0-9/+=]{40}"
+  
+  # GitHub
+  github_token: "ghp_[a-zA-Z0-9]{36}"
+  github_pat: "github_pat_[a-zA-Z0-9]{82}"
+  
+  # GitLab
+  gitlab_token: "glpat-[a-zA-Z0-9_-]{20}"
+  
+  # Slack
+  slack_token: "xox[baprs]-[0-9]{10,12}-[0-9]{10,12}-[a-zA-Z0-9]{24,32}"
+  
+  # Generic password
+  password_field: "password[:=]\\s*['\\\"][^'\\\"]+['\\\"]"
+  
+  # Private keys
+  private_key: "-----BEGIN.*PRIVATE KEY-----"
+  
+  # JWT
+  jwt: "eyJ[A-Za-z0-9_-]*\\.eyJ[A-Za-z0-9_-]*\\.[A-Za-z0-9_-]*"
+  
+  # Google API
+  google_api: "AIza[0-9A-Za-z_-]{35}"
+  
+  # Database URLs
+  db_url: "(postgres|mysql|mongodb)://[^:]+:[^@]+@"
