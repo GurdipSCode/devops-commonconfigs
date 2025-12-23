@@ -1,0 +1,216 @@
+# GitGuardian Configuration - Generic
+# Universal secret detection for any repository type
+# Place this file at the root of your repository as .gitguardian.yaml
+
+# GitGuardian version
+version: 2
+
+# Paths to scan
+paths-ignore:
+  - "**/node_modules/**"
+  - "**/vendor/**"
+  - "**/.git/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/.terraform/**"
+  - "**/target/**"
+  - "**/__pycache__/**"
+  - "**/*.pyc"
+  - "**/.venv/**"
+  - "**/venv/**"
+
+# Detectors configuration
+secret-scan:
+  # Enable all detectors
+  detectors:
+    # Cloud Providers
+    - name: AWS Access Key
+      detector_group: aws
+      enabled: true
+    
+    - name: AWS Secret Key
+      detector_group: aws
+      enabled: true
+    
+    - name: GCP API Key
+      detector_group: gcp
+      enabled: true
+    
+    - name: GCP Service Account Key
+      detector_group: gcp
+      enabled: true
+    
+    - name: Azure Storage Account Key
+      detector_group: azure
+      enabled: true
+    
+    - name: Azure Client Secret
+      detector_group: azure
+      enabled: true
+    
+    # Version Control
+    - name: GitHub Personal Access Token
+      detector_group: github
+      enabled: true
+    
+    - name: GitHub App Token
+      detector_group: github
+      enabled: true
+    
+    - name: GitHub OAuth Access Token
+      detector_group: github
+      enabled: true
+    
+    - name: GitLab Personal Access Token
+      detector_group: gitlab
+      enabled: true
+    
+    - name: GitLab Pipeline Trigger Token
+      detector_group: gitlab
+      enabled: true
+    
+    # API Services
+    - name: Slack Token
+      detector_group: slack
+      enabled: true
+    
+    - name: Slack Webhook URL
+      detector_group: slack
+      enabled: true
+    
+    - name: Stripe API Key
+      detector_group: stripe
+      enabled: true
+    
+    - name: SendGrid API Key
+      detector_group: sendgrid
+      enabled: true
+    
+    - name: Twilio API Key
+      detector_group: twilio
+      enabled: true
+    
+    - name: Mailgun API Key
+      detector_group: mailgun
+      enabled: true
+    
+    - name: DigitalOcean Token
+      detector_group: digitalocean
+      enabled: true
+    
+    - name: Heroku API Key
+      detector_group: heroku
+      enabled: true
+    
+    # Cryptographic Keys
+    - name: RSA Private Key
+      detector_group: private_key
+      enabled: true
+    
+    - name: SSH Private Key
+      detector_group: private_key
+      enabled: true
+    
+    - name: PGP Private Key
+      detector_group: private_key
+      enabled: true
+    
+    - name: Generic Private Key
+      detector_group: private_key
+      enabled: true
+    
+    # Database
+    - name: Database Connection String
+      detector_group: database
+      enabled: true
+    
+    - name: PostgreSQL Connection String
+      detector_group: database
+      enabled: true
+    
+    - name: MySQL Connection String
+      detector_group: database
+      enabled: true
+    
+    - name: MongoDB Connection String
+      detector_group: database
+      enabled: true
+    
+    # Generic Secrets
+    - name: Generic High Entropy Secret
+      detector_group: generic
+      enabled: true
+    
+    - name: Generic Password
+      detector_group: generic
+      enabled: true
+    
+    - name: JWT Token
+      detector_group: generic
+      enabled: true
+    
+    - name: Basic Auth
+      detector_group: generic
+      enabled: true
+    
+    # Package Managers
+    - name: NPM Token
+      detector_group: npm
+      enabled: true
+    
+    - name: PyPI Token
+      detector_group: pypi
+      enabled: true
+    
+    # CI/CD
+    - name: CircleCI Token
+      detector_group: circleci
+      enabled: true
+    
+    - name: Travis CI Token
+      detector_group: travis
+      enabled: true
+    
+    - name: Jenkins Token
+      detector_group: jenkins
+      enabled: true
+
+# Exclusions for false positives
+matches-ignore:
+  # Example secrets (clearly fake)
+  - name: Example AWS Key
+    match: AKIAIOSFODNN7EXAMPLE
+  
+  - name: Example passwords
+    match: password123
+  
+  - name: Example tokens
+    match: your-token-here
+  
+  - name: Placeholder values
+    match: <.*>
+  
+  - name: Environment variable placeholders
+    match: \$\{.*\}
+  
+  - name: Template variables
+    match: \{\{.*\}\}
+
+# Minimum occurrence for detection
+minimum-occurrences: 1
+
+# Exit code on detection
+exit-zero: false  # Exit with error code if secrets found
+
+# Output format
+output:
+  format: text  # Options: text, json, sarif
+  show-secrets: false  # Don't show actual secret values in output
+  
+# Reporting
+report:
+  # Send findings to GitGuardian dashboard (requires auth)
+  dashboard: false
+  
+  # Break build on detection
+  break-on-detection: true
