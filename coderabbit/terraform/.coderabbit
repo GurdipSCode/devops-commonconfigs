@@ -331,6 +331,1031 @@ path_instructions:
             }
           }
           ```
+      
+      13. DATA SOURCE VALIDATION
+          - Data sources should have validation
+          - Check data source exists before use
+          - Handle missing data sources gracefully
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: No validation on data source
+          data "vsphere_datacenter" "dc" {
+            name = var.datacenter_name  # What if doesn't exist?
+          }
+          
+          resource "vsphere_virtual_machine" "web" {
+            datacenter_id = data.vsphere_datacenter.dc.id  # Will fail if DC not found
+          }
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ GOOD: Validate data source in variable
+          variable "datacenter_name" {
+            description = "vSphere datacenter name. Must exist in vCenter."
+            type        = string
+            
+            validation {
+              condition     = length(var.datacenter_name) > 0
+              error_message = "Datacenter name cannot be empty"
+            }
+          }
+          
+          # Better: Use precondition (Terraform 1.2+)
+          data "vsphere_datacenter" "dc" {
+            name = var.datacenter_name
+            
+            lifecycle {
+              precondition {
+                condition     = self.id != ""
+                error_message = "Datacenter '${var.datacenter_name}' not found in vCenter"
+              }
+            }
+          }
+          ```
+      
+      14. RESOURCE TIMEOUTS
+          - Add timeouts to prevent infinite hangs
+          - Critical for VM creation, network operations
+          - Document why specific timeout values chosen
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: No timeout - could hang indefinitely
+          resource "vsphere_virtual_machine" "web" {
+            name = "web-server"
+            # ... config
+          }
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ GOOD: With timeouts
+          resource "vsphere_virtual_machine" "web" {
+            name = "web-server"
+            
+            timeouts {
+              create = "60m"  # VM creation can take time
+              update = "30m"
+              delete = "20m"
+            }
+          }
+          
+          resource "proxmox_vm_qemu" "app" {
+            timeouts {
+              create = "45m"
+              update = "30m"
+              delete = "15m"
+            }
+          }
+          ```
+      
+      15. IGNORE_CHANGES ABUSE
+          - Flag overuse of ignore_changes
+          - Each ignore_changes should be commented
+          - Consider if resource should be managed differently
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Too many ignore_changes
+          resource "vsphere_virtual_machine" "web" {
+            lifecycle {
+              ignore_changes = [
+                num_cpus,
+                memory,
+                disk,
+                network_interface,
+                guest_id,
+                # Ignoring too much = not really managing this resource!
+              ]
+            }
+          }
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ GOOD: Justified ignore_changes
+          resource "vsphere_virtual_machine" "web" {
+            lifecycle {
+              # Ignore tags because they're managed by external system
+              ignore_changes = [tags]
+            }
+          }
+          ```
+      
+      16. HARDCODED IP ADDRESSES
+          - Flag hardcoded IP addresses in config
+          - Should use variables or IPAM
+          - Document IP allocation scheme
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Hardcoded IP
+          resource "proxmox_vm_qemu" "web" {
+            ipconfig0 = "ip=192.168.1.100/24,gw=192.168.1.1"
+          }
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ GOOD: IP from variable or IPAM
+          resource "proxmox_vm_qemu" "web" {
+            ipconfig0 = "ip=${var.vm_ip_address}/${var.subnet_mask},gw=${var.gateway}"
+          }
+          
+          # Or better: Dynamic from IPAM
+          data "netbox_ip_address" "web" {
+            ...
+          }
+          
+          resource "proxmox_vm_qemu" "web" {
+            ipconfig0 = "ip=${data.netbox_ip_address.web.ip_address}/24,gw=${var.gateway}"
+          }
+          ```
+      
+      17. OUTPUT SENSITIVITY
+          - Flag outputs that expose secrets without sensitive=true
+          - Check for password, token, key in output names
+          - Verify sensitive data marked correctly
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Secret in output without sensitive flag
+          output "database_password" {
+            value = random_password.db.result
+          }
+          
+          output "api_token" {
+            value = var.api_token
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: Sensitive outputs marked
+          output "database_password" {
+            description = "Database password"
+            value       = random_password.db.result
+            sensitive   = true
+          }
+          
+          output "vm_ssh_private_key" {
+            description = "SSH private key for VM access"
+            value       = tls_private_key.vm.private_key_pem
+            sensitive   = true
+          }
+          ```
+      
+      18. MODULE SOURCE PINNING
+          - Flag module sources without version pinning
+          - Git URLs should have ref parameter
+          - Registry modules should have version
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: No version pinning
+          module "network" {
+            source = "git::https://github.com/company/terraform-modules.git//network"
+          }
+          
+          module "compute" {
+            source = "app.terraform.io/company/compute/vsphere"
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: Pinned versions
+          module "network" {
+            source = "git::https://github.com/company/terraform-modules.git//network?ref=v1.2.3"
+          }
+          
+          module "compute" {
+            source  = "app.terraform.io/company/compute/vsphere"
+            version = "~> 2.1.0"
+          }
+          ```
+      
+      19. CONNECTION BLOCK SECURITY
+          - Flag connection blocks with hardcoded credentials
+          - Verify SSH keys not exposed
+          - Check for insecure connection types
+          
+          Flag:
+          ```hcl
+          # 🔐 CRITICAL: Hardcoded credentials in connection
+          resource "null_resource" "configure" {
+            connection {
+              type     = "ssh"
+              host     = vsphere_virtual_machine.web.default_ip_address
+              user     = "root"
+              password = "MyPassword123!"  # ← Hardcoded!
+            }
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: Credentials from variables
+          resource "null_resource" "configure" {
+            connection {
+              type        = "ssh"
+              host        = vsphere_virtual_machine.web.default_ip_address
+              user        = var.ssh_user
+              private_key = var.ssh_private_key  # From variable
+            }
+          }
+          ```
+      
+      20. LOCAL-EXEC COMMAND INJECTION
+          - Flag local-exec with string interpolation
+          - Check for unsanitized variable usage
+          - Suggest safer alternatives
+          
+          Flag:
+          ```hcl
+          # 🔐 CRITICAL: Command injection risk
+          resource "null_resource" "deploy" {
+            provisioner "local-exec" {
+              command = "ssh ${var.hostname} 'echo ${var.user_input}'"
+              # ← If user_input contains '; rm -rf /', you're hosed!
+            }
+          }
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ BETTER: Use proper escaping or avoid local-exec
+          resource "null_resource" "deploy" {
+            provisioner "local-exec" {
+              command = "ssh ${var.hostname} 'echo ${jsonencode(var.user_input)}'"
+            }
+          }
+          
+          # ✅ BEST: Don't use local-exec, use proper resources
+          ```
+      
+      21. COMPLEX CONDITIONAL LOGIC
+          - Flag deeply nested ternary operators
+          - Suggest using locals for clarity
+          - Limit to 2 levels of nesting
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Too complex
+          resource "vsphere_virtual_machine" "web" {
+            num_cpus = var.environment == "prod" ? (var.size == "large" ? 8 : 4) : (var.size == "large" ? 4 : 2)
+            memory   = var.environment == "prod" ? (var.size == "large" ? 16384 : 8192) : (var.size == "large" ? 8192 : 4096)
+          }
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ GOOD: Use locals
+          locals {
+            vm_specs = {
+              prod = {
+                large  = { cpus = 8, memory = 16384 }
+                medium = { cpus = 4, memory = 8192 }
+              }
+              dev = {
+                large  = { cpus = 4, memory = 8192 }
+                medium = { cpus = 2, memory = 4096 }
+              }
+            }
+            
+            selected_spec = local.vm_specs[var.environment][var.size]
+          }
+          
+          resource "vsphere_virtual_machine" "web" {
+            num_cpus = local.selected_spec.cpus
+            memory   = local.selected_spec.memory
+          }
+          ```
+      
+      22. TEMPLATEFILE SECURITY
+          - Flag templatefile() with user input
+          - Check for template injection risks
+          - Validate template paths
+          
+          Flag:
+          ```hcl
+          # 🔐 WARNING: Template injection risk
+          resource "proxmox_vm_qemu" "web" {
+            cicustom = templatefile("${var.user_path}/cloud-init.yaml", {
+              # ← User controls template path!
+            })
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: Fixed template path
+          resource "proxmox_vm_qemu" "web" {
+            cicustom = templatefile("${path.module}/templates/cloud-init.yaml", {
+              hostname = var.hostname
+            })
+          }
+          ```
+      
+      23. ERROR MESSAGES IN VALIDATION
+          - All validation rules must have clear error_message
+          - Error messages should explain what's wrong AND how to fix
+          - Include examples in error messages
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Vague error message
+          variable "vm_name" {
+            validation {
+              condition     = can(regex("^[a-z0-9-]+$", var.vm_name))
+              error_message = "Invalid name"
+            }
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: Clear, actionable error message
+          variable "vm_name" {
+            validation {
+              condition     = can(regex("^[a-z0-9-]+$", var.vm_name))
+              error_message = "VM name must contain only lowercase letters, numbers, and hyphens. Got '${var.vm_name}'. Example: 'web-server-01'"
+            }
+          }
+          ```
+      
+      24. FILE ORGANIZATION
+          - Flag files with >500 lines
+          - Suggest splitting into logical files
+          - Check for proper separation of concerns
+          
+          Flag:
+          ```
+          main.tf (1500 lines)  # ← Too large!
+          ```
+          
+          Suggest:
+          ```
+          # ✅ GOOD: Organized structure
+          main.tf           # Entry point, module calls
+          variables.tf      # Variable definitions
+          outputs.tf        # Output definitions
+          data.tf           # Data sources
+          locals.tf         # Local values
+          network.tf        # Network resources
+          compute.tf        # Compute resources
+          storage.tf        # Storage resources
+          versions.tf       # Provider versions
+          ```
+      
+      25. WORKSPACE USAGE
+          - Flag terraform workspace usage
+          - Workspaces can cause state management issues
+          - Suggest separate state files instead
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Workspace-dependent logic
+          resource "vsphere_virtual_machine" "web" {
+            name = "${terraform.workspace}-web-server"
+          }
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ BETTER: Use separate directories/states
+          # dev/terraform.tf
+          # staging/terraform.tf  
+          # prod/terraform.tf
+          
+          # Or use environment variable
+          resource "vsphere_virtual_machine" "web" {
+            name = "${var.environment}-web-server"
+          }
+          ```
+      
+      26. CIDR CALCULATIONS
+          - Verify CIDR block calculations are correct
+          - Check for subnet overlaps
+          - Validate cidrsubnet() usage
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Manual subnet calculation - error-prone
+          locals {
+            subnet_1 = "10.0.1.0/24"
+            subnet_2 = "10.0.2.0/24"
+            subnet_3 = "10.0.3.0/24"
+          }
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ GOOD: Use cidrsubnet()
+          variable "vpc_cidr" {
+            default = "10.0.0.0/16"
+          }
+          
+          locals {
+            subnet_cidrs = [
+              cidrsubnet(var.vpc_cidr, 8, 1),  # 10.0.1.0/24
+              cidrsubnet(var.vpc_cidr, 8, 2),  # 10.0.2.0/24
+              cidrsubnet(var.vpc_cidr, 8, 3),  # 10.0.3.0/24
+            ]
+          }
+          ```
+      
+      27. PERFORMANCE - LARGE LOOPS
+          - Flag for_each with >100 items
+          - Warn about performance implications
+          - Suggest chunking or alternative approach
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Creating 500 VMs in single apply
+          resource "vsphere_virtual_machine" "nodes" {
+            for_each = toset(range(1, 501))  # 500 VMs!
+            # This will take hours and likely time out
+          }
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ BETTER: Create in batches or use different approach
+          # Consider: VM templates, cloning, or external orchestration
+          ```
+      
+      28. IMPORT BLOCKS (Terraform 1.5+)
+          - Encourage use of import blocks over terraform import
+          - Verify import blocks have proper to address
+          - Document what's being imported and why
+          
+          Good:
+          ```hcl
+          # ✅ GOOD: Import block with documentation
+          import {
+            # Importing existing production database VM to Terraform management
+            # VM was created manually in vCenter on 2024-01-15
+            to = vsphere_virtual_machine.prod_db
+            id = "vm-123456"
+          }
+          
+          resource "vsphere_virtual_machine" "prod_db" {
+            # Configuration matches existing VM
+            name = "prod-database"
+            # ...
+          }
+          ```
+      
+      29. SENSITIVE DATA IN NON-SENSITIVE CONTEXTS
+          - Flag sensitive variables used in non-sensitive outputs
+          - Check sensitive data in resource names/tags
+          - Verify sensitive values not in count/for_each keys
+          
+          Flag:
+          ```hcl
+          # 🔐 CRITICAL: Sensitive data in resource name
+          variable "api_key" {
+            sensitive = true
+          }
+          
+          resource "null_resource" "deploy" {
+            name = "deploy-${var.api_key}"  # ← Exposes secret in name!
+          }
+          
+          # 🔐 CRITICAL: Sensitive in output without sensitive flag
+          output "connection_string" {
+            # Contains password but not marked sensitive
+            value = "host=${var.db_host};password=${var.db_password}"
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: Separate sensitive and non-sensitive
+          output "connection_string" {
+            value     = "host=${var.db_host};password=${var.db_password}"
+            sensitive = true
+          }
+          ```
+      
+      30. BACKEND PARTIAL CONFIGURATION
+          - Backend credentials should use partial config
+          - Never hardcode backend credentials in .tf files
+          - Use backend config file or environment variables
+          
+          Flag:
+          ```hcl
+          # 🔐 CRITICAL: Backend credentials in code
+          terraform {
+            backend "consul" {
+              address  = "consul.local:8500"
+              username = "terraform"
+              password = "MyPassword123!"  # ← Hardcoded!
+            }
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: Partial configuration
+          terraform {
+            backend "consul" {
+              address = "consul.local:8500"
+              # username and password set via:
+              # - backend config file: -backend-config=backend.hcl
+              # - environment: TF_CLI_ARGS_init="-backend-config=username=... -backend-config=password=..."
+            }
+          }
+          ```
+      
+      31. RANDOM RESOURCE LIFECYCLE
+          - random_* resources should have keepers
+          - Explain what triggers regeneration
+          - Consider using random_id for short IDs
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: No keepers - regenerates every apply
+          resource "random_password" "db" {
+            length = 16
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: With keepers
+          resource "random_password" "db" {
+            length = 16
+            
+            keepers = {
+              # Regenerate when VM is replaced
+              vm_id = vsphere_virtual_machine.db.id
+            }
+          }
+          ```
+      
+      32. NON-DETERMINISTIC FUNCTIONS
+          - Flag timestamp() usage (always changes)
+          - Flag uuid() usage (always changes)
+          - Suggest using plantimestamp() or terraform_data
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Non-deterministic function
+          resource "vsphere_virtual_machine" "web" {
+            annotation = "Created at ${timestamp()}"
+            # ← This changes every plan, causing constant drift!
+          }
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ GOOD: Use plantimestamp() for creation time
+          resource "vsphere_virtual_machine" "web" {
+            annotation = "Created at ${plantimestamp()}"
+          }
+          
+          # Or better: Use lifecycle ignore_changes
+          resource "vsphere_virtual_machine" "web" {
+            annotation = "Created at ${timestamp()}"
+            
+            lifecycle {
+              ignore_changes = [annotation]
+            }
+          }
+          ```
+      
+      33. FILE FUNCTION SECURITY
+          - Check file() paths are not user-controlled
+          - Validate file paths exist
+          - Consider using templatefile() instead
+          
+          Flag:
+          ```hcl
+          # 🔐 CRITICAL: User-controlled file path
+          resource "proxmox_vm_qemu" "web" {
+            ssh_private_key = file(var.key_path)
+            # ← User could set to /etc/passwd!
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: Fixed path with validation
+          variable "key_path" {
+            validation {
+              condition     = can(regex("^[a-zA-Z0-9/_.-]+\\.pem$", var.key_path))
+              error_message = "Key path must be a .pem file"
+            }
+          }
+          
+          # Better: Use fixed path
+          resource "proxmox_vm_qemu" "web" {
+            ssh_private_key = file("${path.module}/keys/id_rsa.pem")
+          }
+          ```
+      
+      34. TRY/CAN/COALESCE USAGE
+          - Prefer can() for validation
+          - Use try() for optional attributes
+          - Use coalesce() for fallback values
+          - Document error handling logic
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: try() without comment
+          num_cpus = try(var.vm_config.cpus, 4)
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ GOOD: Documented try()
+          # Default to 4 CPUs if not specified in vm_config
+          num_cpus = try(var.vm_config.cpus, 4)
+          
+          # ✅ GOOD: Use can() in validation
+          variable "cidr_block" {
+            validation {
+              condition     = can(cidrhost(var.cidr_block, 0))
+              error_message = "Must be valid CIDR"
+            }
+          }
+          ```
+      
+      35. TYPE COERCION
+          - Prefer explicit type conversion
+          - Flag implicit type conversions
+          - Use tostring(), tonumber(), tobool() explicitly
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Implicit type conversion
+          resource "vsphere_virtual_machine" "web" {
+            annotation = var.vm_id  # number → string implicitly
+          }
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ GOOD: Explicit conversion
+          resource "vsphere_virtual_machine" "web" {
+            annotation = tostring(var.vm_id)
+          }
+          ```
+      
+      36. MAP MERGE CONFLICTS
+          - Check merge() for potential key conflicts
+          - Document merge precedence
+          - Consider using deep merge when needed
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Potential merge conflict
+          locals {
+            default_tags = { Environment = "dev" }
+            custom_tags  = var.tags
+            
+            # If var.tags has Environment, which wins?
+            all_tags = merge(local.default_tags, local.custom_tags)
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: Document merge behavior
+          locals {
+            # Custom tags override defaults (right wins)
+            all_tags = merge(local.default_tags, local.custom_tags)
+          }
+          
+          # Or validate no conflicts
+          variable "tags" {
+            validation {
+              condition = !contains(keys(var.tags), "Environment")
+              error_message = "Cannot override Environment tag"
+            }
+          }
+          ```
+      
+      37. JSONENCODE/YAMLENCODE USAGE
+          - Use jsonencode() instead of manual JSON strings
+          - Use yamlencode() for YAML generation
+          - Validate JSON/YAML structure
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Manual JSON string
+          extra_config = "{\"disk.enableUUID\": \"true\"}"
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ GOOD: Use jsonencode()
+          extra_config = jsonencode({
+            "disk.enableUUID" = "true"
+          })
+          ```
+      
+      38. PRECONDITIONS AND POSTCONDITIONS
+          - Use preconditions to validate inputs
+          - Use postconditions to validate outputs
+          - Provide clear error messages
+          
+          Good:
+          ```hcl
+          # ✅ GOOD: Precondition on resource
+          resource "vsphere_virtual_machine" "web" {
+            num_cpus = var.cpu_count
+            
+            lifecycle {
+              precondition {
+                condition     = var.cpu_count >= 2
+                error_message = "Production VMs require at least 2 CPUs"
+              }
+              
+              postcondition {
+                condition     = self.power_state == "poweredOn"
+                error_message = "VM failed to power on"
+              }
+            }
+          }
+          ```
+      
+      39. CHECK BLOCKS (Terraform 1.5+)
+          - Use check blocks for assertions
+          - Validate infrastructure state
+          - Document what's being checked
+          
+          Good:
+          ```hcl
+          # ✅ GOOD: Check block for validation
+          check "vm_network_connectivity" {
+            data "http" "vm_health" {
+              url = "http://${vsphere_virtual_machine.web.default_ip_address}/health"
+            }
+            
+            assert {
+              condition     = data.http.vm_health.status_code == 200
+              error_message = "VM health check failed"
+            }
+          }
+          ```
+      
+      40. PROVIDER ALIASES IN MODULES
+          - Modules should not configure providers
+          - Use required_providers in modules
+          - Pass provider aliases explicitly
+          
+          Flag:
+          ```hcl
+          # ❌ BAD: Module configuring provider
+          # module/main.tf
+          provider "vsphere" {
+            user = var.vsphere_user
+            # Modules shouldn't configure providers!
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: Module declares required providers
+          # module/versions.tf
+          terraform {
+            required_providers {
+              vsphere = {
+                source  = "hashicorp/vsphere"
+                version = "~> 2.5"
+              }
+            }
+          }
+          
+          # Root module passes provider
+          module "vms" {
+            source = "./modules/vms"
+            providers = {
+              vsphere = vsphere.datacenter1
+            }
+          }
+          ```
+      
+      41. MULTIPLE PROVIDER INSTANCES
+          - Document why multiple providers needed
+          - Use clear alias names
+          - Validate provider configuration
+          
+          Good:
+          ```hcl
+          # ✅ GOOD: Clear provider aliases
+          provider "vsphere" {
+            alias = "datacenter1"
+            vsphere_server = "vcenter1.company.local"
+          }
+          
+          provider "vsphere" {
+            alias = "datacenter2"
+            vsphere_server = "vcenter2.company.local"
+          }
+          
+          # Use in resources
+          resource "vsphere_virtual_machine" "web_dc1" {
+            provider = vsphere.datacenter1
+          }
+          ```
+      
+      42. PESSIMISTIC VERSION CONSTRAINTS
+          - Use ~> for minor version updates
+          - Document why specific versions required
+          - Avoid >= (too permissive)
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: Too permissive
+          terraform {
+            required_providers {
+              vsphere = {
+                source  = "hashicorp/vsphere"
+                version = ">= 2.0"  # ← Allows 3.0, 4.0, breaking changes!
+              }
+            }
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: Pessimistic constraint
+          terraform {
+            required_providers {
+              vsphere = {
+                source  = "hashicorp/vsphere"
+                version = "~> 2.5"  # Allows 2.5.x, not 3.0
+              }
+            }
+          }
+          ```
+      
+      43. DEPRECATED RESOURCE TYPES
+          - Flag use of deprecated resources
+          - Suggest replacement resources
+          - Link to migration guide
+          
+          Example checks:
+          - vsphere_virtual_machine_snapshot (deprecated)
+          - Old resource types vs new
+      
+      44. COUNT.INDEX USAGE
+          - Even with count, use it properly
+          - Don't use in resource names without padding
+          - Consider if for_each is better
+          
+          Flag:
+          ```hcl
+          # ⚠️ WARNING: count.index without padding
+          resource "vsphere_virtual_machine" "web" {
+            count = 10
+            name  = "web-${count.index}"
+            # Creates: web-0, web-1, ... web-9, web-10
+            # Inconsistent length!
+          }
+          ```
+          
+          Suggest:
+          ```hcl
+          # ✅ GOOD: Padded index
+          resource "vsphere_virtual_machine" "web" {
+            count = 10
+            name  = format("web-%02d", count.index)
+            # Creates: web-00, web-01, ... web-09, web-10
+          }
+          
+          # ✅ BETTER: Use for_each
+          resource "vsphere_virtual_machine" "web" {
+            for_each = toset([for i in range(10) : format("web-%02d", i)])
+            name     = each.key
+          }
+          ```
+      
+      45. SELF REFERENCE USAGE
+          - Use self for referencing current resource
+          - Explain self in preconditions/postconditions
+          - Validate self usage
+          
+          Good:
+          ```hcl
+          # ✅ GOOD: Using self
+          resource "vsphere_virtual_machine" "web" {
+            lifecycle {
+              postcondition {
+                condition     = self.power_state == "poweredOn"
+                error_message = "VM ${self.name} failed to power on"
+              }
+            }
+          }
+          ```
+      
+      46. REMOTE STATE DATA SOURCES
+          - Validate remote state references
+          - Document what's being referenced
+          - Handle missing state gracefully
+          
+          Good:
+          ```hcl
+          # ✅ GOOD: Remote state with error handling
+          data "terraform_remote_state" "network" {
+            backend = "consul"
+            config = {
+              path = "network/terraform.tfstate"
+            }
+          }
+          
+          locals {
+            # Handle missing output gracefully
+            vpc_id = try(
+              data.terraform_remote_state.network.outputs.vpc_id,
+              var.default_vpc_id
+            )
+          }
+          ```
+      
+      47. MOVED BLOCKS DOCUMENTATION
+          - Document all moved blocks
+          - Explain what was refactored
+          - Include date and reason
+          
+          Good:
+          ```hcl
+          # ✅ GOOD: Documented moved block
+          # Refactored 2024-12-01: Renamed for consistency
+          # Old name: vsphere_virtual_machine.vm_web_server
+          # New name: vsphere_virtual_machine.web_server
+          moved {
+            from = vsphere_virtual_machine.vm_web_server
+            to   = vsphere_virtual_machine.web_server
+          }
+          ```
+      
+      48. REPLACE_TRIGGERED_BY USAGE
+          - Document why resource needs replacement
+          - Use for dependencies not tracked by Terraform
+          - Explain trigger conditions
+          
+          Good:
+          ```hcl
+          # ✅ GOOD: Documented replace trigger
+          resource "null_resource" "vm_provisioner" {
+            # Replace when VM or config changes
+            replace_triggered_by = [
+              vsphere_virtual_machine.web.id,
+              local_file.config.id
+            ]
+          }
+          ```
+      
+      49. VARIABLE DEFAULT VALUES
+          - Secrets should never have defaults
+          - Sensitive data should never have defaults
+          - Document why defaults are safe
+          
+          Flag:
+          ```hcl
+          # 🔐 CRITICAL: Secret with default
+          variable "admin_password" {
+            sensitive = true
+            default   = "changeme"  # ← Never!
+          }
+          ```
+          
+          Require:
+          ```hcl
+          # ✅ GOOD: Secret without default
+          variable "admin_password" {
+            description = "Admin password from vault"
+            type        = string
+            sensitive   = true
+            # No default!
+          }
+          ```
+      
+      50. TERRAFORM_DATA RESOURCE
+          - Use terraform_data for triggers
+          - Replace null_resource where appropriate
+          - Document trigger behavior
+          
+          Good:
+          ```hcl
+          # ✅ GOOD: Using terraform_data
+          resource "terraform_data" "vm_replacement" {
+            input = var.vm_configuration_version
+          }
+          
+          resource "vsphere_virtual_machine" "web" {
+            lifecycle {
+              replace_triggered_by = [terraform_data.vm_replacement]
+            }
+          }
+          ```
   
   # Variables files
   - path: "**/*variables.tf"
