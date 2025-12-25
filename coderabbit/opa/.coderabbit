@@ -1,1 +1,124 @@
+version: 1
+
+language: en-GB
+
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+
+  high_level_summary: true
+  poem: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+
+  review_status: true
+
+  path_filters:
+    include:
+      - "**/*.rego"
+      - "**/*.yaml"
+      - "**/*.yml"
+      - ".github/workflows/**"
+      - "policy/**"
+      - "rules/**"
+      - "packages/**"
+    exclude:
+      - "**/*.md"
+      - "**/*.json"
+      - "**/vendor/**"
+      - "**/dist/**"
+
+  rules:
+    # --- OPA / Rego correctness ---
+    - name: rego-syntax-and-idioms
+      description: >
+        Enforce idiomatic Rego, correct rule structure, and safe usage
+        of `some`, `else`, `default`, and partial evaluation patterns.
+      severity: high
+
+    - name: unsafe-variable-detection
+      description: >
+        Detect unsafe or unbound variables, shadowing, and rule
+        ambiguity that could cause unexpected policy behaviour.
+      severity: critical
+
+    - name: deny-rules-first-class
+      description: >
+        Prefer explicit `deny` rules with human-readable messages over
+        boolean allow-only logic.
+      severity: high
+
+    - name: default-deny
+      description: >
+        Ensure all policy packages define an explicit default deny behaviour.
+      severity: critical
+
+    # --- Security & governance ---
+    - name: policy-bypass-detection
+      description: >
+        Flag policies that can be trivially bypassed via missing inputs,
+        wildcards, or permissive conditions.
+      severity: critical
+
+    - name: input-validation
+      description: >
+        Validate existence and type of required input fields before use.
+      severity: high
+
+    - name: data-dependency-review
+      description: >
+        Highlight implicit dependencies on external `data.*` documents.
+      severity: medium
+
+    # --- Testing ---
+    - name: unit-test-coverage
+      description: >
+        Require corresponding `_test.rego` files for policy logic and
+        validate positive and negative test cases.
+      severity: high
+
+    - name: test-clarity
+      description: >
+        Enforce clear test names describing intent, failure mode, and scenario.
+      severity: medium
+
+    # --- Performance ---
+    - name: policy-performance
+      description: >
+        Detect inefficient patterns such as nested loops, broad `walk`,
+        or unbounded comprehensions.
+      severity: medium
+
+    # --- Repo hygiene ---
+    - name: package-structure
+      description: >
+        Enforce one policy concern per package and avoid mega-packages.
+      severity: medium
+
+    - name: naming-conventions
+      description: >
+        Enforce consistent naming for packages, rules, and test cases.
+      severity: low
+
+  comment_style:
+    tone: professional
+    suggestions: actionable
+    include_examples: true
+    avoid_repetition: true
+
+  security:
+    detect_secrets: false
+    supply_chain: false
+
+  metrics:
+    track_review_coverage: true
+    track_policy_complexity: true
+
+  failure_handling:
+    fail_on:
+      - severity: critical
+      - unsafe-variable-detection
+      - default-deny
 
