@@ -1,0 +1,34 @@
+# .gitguardian.yaml — tuned for OpenTofu / Terraform projects
+# version: 2 is required; without it ggshield falls back to the deprecated v1 format.
+version: 2
+
+exit_zero: false
+verbose: false
+max_commits_for_hook: 50
+
+secret:
+  # Keep this list SHORT on purpose — see notes below.
+  # The only things excluded are vendored/third-party code and pure docs noise.
+  ignored_paths:
+    # OpenTofu working dir: downloaded providers & modules (third-party, noisy)
+    - '**/.terraform/**'
+    - '**/.terraform.lock.hcl'
+    - '**/.external_modules/**'
+
+    # Provider / plugin cache
+    - '**/terraform.d/plugins/**'
+
+    # Docs
+    - 'docs/**'
+    - '**/*.md'
+    - 'LICENSE'
+
+  # Known/false-positive secrets — prefer `ggshield secret ignore --last-found`.
+  ignored_matches: []
+  #  - name: example creds in module fixtures
+  #    match: <sha256-of-occurrence-or-the-secret-itself>
+
+  ignored_detectors: []
+
+  show_secrets: false
+  ignore_known_secrets: false
