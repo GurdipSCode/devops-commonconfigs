@@ -1,0 +1,88 @@
+# .semgrepignore — tuned for .NET Core / C# projects
+# Syntax follows .gitignore conventions.
+# Docs: https://semgrep.dev/docs/ignoring-files-folders-code
+
+# --- Build output ---
+bin/
+obj/
+out/
+publish/
+artifacts/
+[Pp]ublish/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+
+# --- Compiled / binary ---
+*.dll
+*.exe
+*.pdb
+*.cache
+*.suo
+*.user
+*.dbmdl
+
+# --- NuGet ---
+packages/
+*.nupkg
+*.snupkg
+packages.lock.json
+.nuget/
+
+# --- Generated code (not your source) ---
+*.Designer.cs
+*.designer.cs
+*.g.cs
+*.g.i.cs
+*.AssemblyInfo.cs
+GlobalUsings.g.cs
+*.GlobalUsings.g.cs
+*.AssemblyAttributes.cs
+*_AssemblyInfo.cs
+*.NuGet.g.props
+*.NuGet.g.targets
+*.AssemblyInfoInputs.cache
+TemporaryGeneratedFile_*.cs
+
+# --- EF Core migrations (scaffolded; uncomment to skip) ---
+# Migrations/
+
+# --- Tests & fixtures (uncomment to skip test code) ---
+# *.Tests/
+# *Tests/
+# *.UnitTests/
+TestResults/
+[Tt]est[Rr]esults/
+
+# --- Client-side assets in web projects ---
+wwwroot/lib/
+wwwroot/dist/
+node_modules/
+bower_components/
+*.min.js
+*.min.css
+*.bundle.js
+*.map
+
+# --- Caches / temp ---
+.vs/
+.cache/
+tmp/
+*.tmp
+BenchmarkDotNet.Artifacts/
+
+# --- IDE / tooling ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# --- Docs ---
+docs/
+*.md
+
+# --- Semgrep itself ---
+.semgrep/
