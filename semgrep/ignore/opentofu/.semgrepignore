@@ -1,0 +1,67 @@
+# .semgrepignore — tuned for OpenTofu / Terraform projects
+# Syntax follows .gitignore conventions.
+# Docs: https://semgrep.dev/docs/ignoring-files-folders-code
+
+# --- OpenTofu working dir (downloaded providers & modules) ---
+.terraform/
+**/.terraform/
+.terraform.lock.hcl
+
+# --- State files (sensitive; not source) ---
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform.tfstate.lock.info
+
+# --- Plan output (may contain secrets) ---
+*.tfplan
+*.tfplan.*
+tfplan
+plan.out
+
+# --- Variable files with secrets (uncomment to skip) ---
+# Often hold credentials. Uncomment if you don't want them scanned —
+# but note Semgrep secret rules may WANT to see these.
+# *.tfvars
+# *.tfvars.json
+# secrets.auto.tfvars
+*.auto.tfvars.example
+
+# --- Local overrides ---
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# --- CLI config / credentials ---
+.terraformrc
+terraform.rc
+.tofurc
+tofu.rc
+
+# --- Crash & debug logs ---
+crash.log
+crash.*.log
+*.log
+
+# --- Caches / temp ---
+.cache/
+tmp/
+*.tmp
+
+# --- Vendored / generated modules ---
+vendor/
+.external_modules/
+
+# --- IDE / tooling ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# --- Docs ---
+docs/
+*.md
+
+# --- Semgrep itself ---
+.semgrep/
