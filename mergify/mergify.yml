@@ -1,0 +1,109 @@
+merge_protections:
+  # Commit Standards
+  - name: Enforce conventional commit
+    description: Make sure that we follow https://www.conventionalcommits.org/en/v1.0.0/
+    if:
+      - base = main
+    success_conditions:
+      - "title ~= ^(fix|feat|docs|style|refactor|perf|test|build|ci|chore|revert)(?:\\(.+\\))?:"
+
+  # Label Requirements
+  - name: Require type label
+    description: PR must have a type label (bug, feature, enhancement, chore, docs, refactor)
+    if:
+      - base = main
+    success_conditions:
+      - label ~= ^(bug|feature|enhancement|chore|docs|refactor|hotfix|security)$
+
+  - name: Require priority label
+    description: PR must have a priority label
+    if:
+      - base = main
+    success_conditions:
+      - label ~= ^priority/(critical|high|medium|low)$
+
+  - name: Require size label
+    description: PR must have a size label indicating scope of changes
+    if:
+      - base = main
+    success_conditions:
+      - label ~= ^size/(XS|S|M|L|XL)$
+
+  # Blocking Labels
+  - name: Block WIP PRs
+    description: PRs marked as work-in-progress cannot be merged
+    if:
+      - base = main
+    success_conditions:
+      - -label ~= ^(WIP|wip|work-in-progress|do-not-merge|blocked|on-hold)$
+
+  - name: Require approval label
+    description: PR must be explicitly approved for merge
+    if:
+      - base = main
+    success_conditions:
+      - label ~= ^(approved|ready-to-merge|lgtm)$
+
+  # Breaking Changes
+  - name: Breaking changes must be labeled
+    description: PRs with breaking changes (feat! or fix!) must have breaking-change label
+    if:
+      - base = main
+      - "title ~= ^(fix|feat)!:"
+    success_conditions:
+      - label = breaking-change
+
+  # Review Requirements
+  - name: Require approved review
+    description: PR must have at least one approved review
+    if:
+      - base = main
+    success_conditions:
+      - "#approved-reviews-by >= 1"
+
+  - name: No pending requested changes
+    description: All requested changes must be resolved
+    if:
+      - base = main
+    success_conditions:
+      - "#changes-requested-reviews-by = 0"
+
+  # PR Quality
+  - name: No merge conflicts
+    description: PR must not have merge conflicts
+    if:
+      - base = main
+    success_conditions:
+      - -conflict
+
+  - name: PR description required
+    description: PR must have a meaningful description
+    if:
+      - base = main
+    success_conditions:
+      - body ~= .{50,}
+
+  - name: Limit PR size
+    description: Large PRs (>500 lines) must be labeled as size/XL or split up
+    if:
+      - base = main
+      - files > 20
+    success_conditions:
+      - label = size/XL
+
+  # CI Requirements
+  - name: CI must pass
+    description: All CI checks must pass before merging
+    if:
+      - base = main
+    success_conditions:
+      - check-success = true
+
+  # Security
+  - name: Security review for sensitive files
+    description: Changes to security-sensitive files need security label
+    if:
+      - base = main
+      - files ~= ^(\.env|auth|security|\.github/workflows)/
+    success_conditions:
+      - label = security-review
