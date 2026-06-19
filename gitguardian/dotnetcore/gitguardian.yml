@@ -1,0 +1,64 @@
+# .gitguardian.yaml — tuned for .NET Core / C# projects
+# version: 2 is required; without it ggshield falls back to the deprecated v1 format.
+version: 2
+
+# Exit 0 even when incidents are found? Keep false so CI fails on leaks.
+exit_zero: false
+verbose: false
+
+# Max commits scanned per git hook invocation.
+max_commits_for_hook: 50
+
+secret:
+  # Paths excluded from secret scanning (glob patterns).
+  # Cuts noise/false-positives from build output, dependencies, and binaries.
+  ignored_paths:
+    # Build output (matches nested project dirs in multi-project solutions)
+    - '**/bin/**'
+    - '**/obj/**'
+    - '**/out/**'
+    - '**/publish/**'
+    - '**/artifacts/**'
+    - '**/TestResults/**'
+
+    # NuGet & dependencies
+    - '**/packages/**'
+    - '**/*.nupkg'
+    - '**/*.snupkg'
+
+    # Compiled / binary artifacts
+    - '**/*.dll'
+    - '**/*.exe'
+    - '**/*.pdb'
+
+    # Client-side assets bundled into web projects
+    - '**/wwwroot/lib/**'
+    - '**/wwwroot/dist/**'
+    - '**/node_modules/**'
+    - '**/*.min.js'
+    - '**/*.min.css'
+    - '**/*.map'
+
+    # Lock files (data, frequent false positives)
+    - '**/packages.lock.json'
+
+    # IDE / tooling
+    - '**/.vs/**'
+
+    # Docs
+    - 'docs/**'
+    - '**/*.md'
+    - 'LICENSE'
+
+  # Ignore specific known/false-positive secrets by SHA256 or value.
+  # Prefer `ggshield secret ignore --last-found` to populate this automatically.
+  ignored_matches: []
+  #  - name: test fixture key
+  #    match: <sha256-of-occurrence-or-the-secret-itself>
+
+  # Detectors to silence entirely (use sparingly).
+  ignored_detectors: []
+  #  - Generic Password
+
+  show_secrets: false
+  ignore_known_secrets: false
