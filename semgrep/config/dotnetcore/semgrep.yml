@@ -1,0 +1,169 @@
+# dotnetcore.yml
+# Semgrep ruleset for .NET Core / C# (ASP.NET Core).
+#
+# Lives in your central rules repo, e.g.  rules/dotnet/dotnetcore.yml
+# Consuming repos reference it (see usage notes at the bottom of this file).
+#
+# Language key is `csharp`. Severities: ERROR | WARNING | INFO.
+# Treat these as a tuned-for-your-codebase starting point — run them against a
+# real repo and adjust before gating CI on them.
+
+rules:
+  # ---------------------------------------------------------------------------
+  # Cryptography
+  # ---------------------------------------------------------------------------
+  - id: csharp-weak-hash-md5
+    languages: [csharp]
+    severity: WARNING
+    message: >
+      MD5 is cryptographically broken. Use SHA-256+ for integrity, and a
+      dedicated password hash (PBKDF2 / Argon2 / bcrypt) for passwords.
+    metadata:
+      category: security
+      cwe: "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+      owasp: "A02:2021 - Cryptographic Failures"
+    pattern-either:
+      - pattern: System.Security.Cryptography.MD5.Create(...)
+      - pattern: MD5.Create(...)
+      - pattern: new MD5CryptoServiceProvider(...)
+
+  - id: csharp-weak-hash-sha1
+    languages: [csharp]
+    severity: WARNING
+    message: SHA-1 is weak for security use. Prefer SHA-256 or stronger.
+    metadata:
+      category: security
+      cwe: "CWE-327"
+    pattern-either:
+      - pattern: SHA1.Create(...)
+      - pattern: new SHA1CryptoServiceProvider(...)
+
+  - id: csharp-weak-cipher
+    languages: [csharp]
+    severity: ERROR
+    message: DES/3DES are weak block ciphers. Use AES (AesGcm preferred).
+    metadata:
+      category: security
+      cwe: "CWE-327"
+    pattern-either:
+      - pattern: DES.Create(...)
+      - pattern: TripleDES.Create(...)
+      - pattern: new DESCryptoServiceProvider(...)
+      - pattern: new TripleDESCryptoServiceProvider(...)
+
+  - id: csharp-insecure-random
+    languages: [csharp]
+    severity: WARNING
+    message: >
+      System.Random is not cryptographically secure. For tokens, salts, keys,
+      or anything security-sensitive use RandomNumberGenerator.
+    metadata:
+      category: security
+      cwe: "CWE-338: Use of Cryptographically Weak PRNG"
+    pattern: new Random(...)
+
+  # ---------------------------------------------------------------------------
+  # TLS / transport
+  # ---------------------------------------------------------------------------
+  - id: csharp-disabled-cert-validation
+    languages: [csharp]
+    severity: ERROR
+    message: >
+      Certificate validation is disabled (callback always returns true),
+      enabling man-in-the-middle attacks. Validate the server certificate.
+    metadata:
+      category: security
+      cwe: "CWE-295: Improper Certificate Validation"
+    pattern-either:
+      - pattern: ServicePointManager.ServerCertificateValidationCallback = (...) => true;
+      - pattern: $OBJ.ServerCertificateCustomValidationCallback = (...) => true;
+      - pattern: $OBJ.RemoteCertificateValidationCallback = (...) => true;
+
+  # ---------------------------------------------------------------------------
+  # Deserialization
+  # ---------------------------------------------------------------------------
+  - id: csharp-binaryformatter
+    languages: [csharp]
+    severity: ERROR
+    message: >
+      BinaryFormatter is insecure and obsolete (removed in .NET 9). It enables
+      RCE on untrusted input. Use System.Text.Json or a safe contract serializer.
+    metadata:
+      category: security
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+    pattern-either:
+      - pattern: new BinaryFormatter(...)
+      - pattern: (BinaryFormatter $F).Deserialize(...)
+
+  # ---------------------------------------------------------------------------
+  # Injection
+  # ---------------------------------------------------------------------------
+  - id: csharp-sql-injection-concat
+    languages: [csharp]
+    severity: ERROR
+    message: >
+      SQL built via interpolation/concatenation is injection-prone. Use
+      parameterized queries (SqlParameter) or EF Core parameter binding.
+    metadata:
+      category: security
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 - Injection"
+    pattern-either:
+      - pattern: new SqlCommand($"...", ...)
+      - pattern: new SqlCommand($X + $Y, ...)
+      - pattern: $CMD.CommandText = $"...";
+      - pattern: $DB.ExecuteSqlRaw($"...", ...)
+      - pattern: $DB.FromSqlRaw($"...", ...)
+
+  - id: csharp-command-injection
+    languages: [csharp]
+    severity: WARNING
+    message: >
+      Launching a process with non-constant input may allow command injection.
+      Validate/allowlist inputs and avoid passing user data to a shell.
+    metadata:
+      category: security
+      cwe: "CWE-78: OS Command Injection"
+    pattern-either:
+      - pattern: Process.Start($X + $Y, ...)
+      - pattern: Process.Start($"...", ...)
+
+  # ---------------------------------------------------------------------------
+  # ASP.NET Core configuration
+  # ---------------------------------------------------------------------------
+  - id: csharp-cors-allow-any-origin
+    languages: [csharp]
+    severity: WARNING
+    message: >
+      AllowAnyOrigin exposes the API to any site. Restrict to known origins,
+      especially when credentials are allowed.
+    metadata:
+      category: security
+      cwe: "CWE-942: Permissive Cross-domain Policy"
+    pattern: $B.AllowAnyOrigin(...)
+
+  - id: csharp-developer-exception-page
+    languages: [csharp]
+    severity: WARNING
+    message: >
+      UseDeveloperExceptionPage leaks stack traces. Ensure it is gated behind
+      an IsDevelopment() check and never reachable in production.
+    metadata:
+      category: security
+      cwe: "CWE-209: Information Exposure Through an Error Message"
+    pattern: $APP.UseDeveloperExceptionPage(...)
+
+  - id: csharp-hardcoded-secret
+    languages: [csharp]
+    severity: WARNING
+    message: >
+      Possible hardcoded secret. Use user-secrets, environment variables, or a
+      secrets manager (Azure Key Vault, AWS Secrets Manager, etc.).
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+    patterns:
+      - pattern: $TYPE $NAME = "...";
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: (?i).*(password|passwd|pwd|secret|apikey|api_key|token|connstr|connectionstring).*
